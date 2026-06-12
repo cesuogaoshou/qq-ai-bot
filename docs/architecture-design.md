@@ -29,6 +29,8 @@ OneBot WebSocket / HTTP
   +--> policy      判断是否回复
   +--> memory      上下文、配置、限频状态
   +--> llm         大模型调用和提示词
+  +--> tools       联网搜索、图片、语音等可选工具
+  +--> budget      成本和限频控制
   +--> services    业务流程编排
   |
   v
@@ -112,6 +114,33 @@ MVP 只服务一个群，但表结构保留 `group_id`。
 - 将 router、policy、memory、llm、onebot 串起来。
 - 记录关键日志。
 
+### tools
+
+负责高级能力接入。
+
+第一批候选工具：
+
+- `web_search`：联网搜索，默认关闭。
+- `image_input`：读图，后续开启。
+- `image_generation`：输出图片，后续开启。
+- `voice_transcription`：语音转文字，可选评估。
+
+工具层不直接决定是否可用。是否调用由 policy、safety 和 budget 共同决定。
+
+### budget
+
+负责成本控制。
+
+包含：
+
+- 每群每日搜索次数。
+- 每用户每日搜索次数。
+- 图片生成次数。
+- 语音转文字分钟数。
+- 大模型 token 或请求次数统计。
+
+第一版可以先用 SQLite 持久化计数，后续再考虑更细的费用统计。
+
 ## 核心流程
 
 ### 群消息流程
@@ -123,6 +152,8 @@ MVP 只服务一个群，但表结构保留 `group_id`。
   -> 判断是否管理员命令
   -> 判断是否 @ 机器人
   -> 检查开关、模式、限频、安全规则
+  -> 判断是否需要工具
+  -> 检查工具开关和成本预算
   -> 读取最近上下文
   -> 构造提示词
   -> 调用大模型
@@ -248,8 +279,13 @@ qq-ai-group-bot/
         safety.py
       llm/
         base.py
-        openai_client.py
+        chat_client.py
         prompt_builder.py
+      tools/
+        registry.py
+        web_search.py
+      budget/
+        usage_counter.py
       memory/
         context_store.py
         sqlite_store.py
@@ -273,3 +309,28 @@ MVP 不实现完整多群配置，但设计上保留扩展点：
 - router 不直接写死群号，而是通过配置或存储判断。
 
 这样可以先用单群降低风险，后续扩展时不需要重写核心架构。
+
+## 高级能力扩展方式
+
+高级能力以工具注册表方式接入：
+
+```text
+ToolRequest
+  name: web_search | image_input | image_generation | voice_transcription
+  group_id
+  user_id
+  query_or_file
+```
+
+工具调用流程：
+
+```text
+触发判断
+  -> 安全分级
+  -> 成本检查
+  -> 工具执行
+  -> 结果摘要
+  -> 模型生成最终回复
+```
+
+这样可以避免模型在普通聊天中无限制调用搜索、图片或语音能力。
