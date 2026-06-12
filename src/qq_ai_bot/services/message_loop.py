@@ -9,6 +9,8 @@ from qq_ai_bot.admin.commands import AdminCommandType, parse_admin_command
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.llm.prompt import build_prompt
 from qq_ai_bot.memory.context import GroupMemory
+from qq_ai_bot.memory.privacy import redact_sensitive_text
+from qq_ai_bot.memory.summary import build_recent_summary_prompt
 from qq_ai_bot.onebot.events import GroupMessageEvent
 from qq_ai_bot.onebot.utils import is_at_bot
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
@@ -35,6 +37,26 @@ class GroupStateStore(Protocol):
         ...
 
     async def set_enabled(self, group_id: int, enabled: bool) -> GroupState:
+        ...
+
+    async def add_message(
+        self,
+        *,
+        group_id: int,
+        user_id: int,
+        nickname: str,
+        role: str,
+        content: str,
+    ):
+        ...
+
+    async def get_recent_messages(self, *, group_id: int, limit: int):
+        ...
+
+    async def count_messages(self, *, group_id: int) -> int:
+        ...
+
+    async def clear_messages(self, *, group_id: int) -> int:
         ...
 
 
@@ -96,6 +118,51 @@ async def handle_group_message(
                 ),
             )
             return True
+        if admin_command.type == AdminCommandType.SUMMARY_RECENT:
+            if llm is None:
+                await actions.send_group_message(
+                    event.group_id,
+                    "当前未配置大模型，无法生成聊天总结。",
+                )
+                return True
+            recent_messages = await group_state_store.get_recent_messages(
+                group_id=event.group_id,
+                limit=100,
+            )
+            if not recent_messages:
+                await actions.send_group_message(event.group_id, "没有可总结的最近聊天记录。")
+                return True
+            summary_prompt = build_recent_summary_prompt(
+                [
+                    {
+                        "nickname": message.nickname,
+                        "content": redact_sensitive_text(message.content),
+                    }
+                    for message in recent_messages
+                ]
+            )
+            try:
+                reply = await llm.chat(summary_prompt)
+            except Exception:
+                logger.exception("Summary LLM call failed for group %s", event.group_id)
+                return False
+            if reply:
+                await actions.send_group_message(event.group_id, reply)
+            return True
+        if admin_command.type == AdminCommandType.MEMORY_STATUS:
+            count = await group_state_store.count_messages(group_id=event.group_id)
+            await actions.send_group_message(
+                event.group_id,
+                f"messages={count} summary=not_persisted",
+            )
+            return True
+        if admin_command.type == AdminCommandType.MEMORY_CLEAR:
+            deleted = await group_state_store.clear_messages(group_id=event.group_id)
+            await actions.send_group_message(event.group_id, f"已清理 {deleted} 条聊天记忆。")
+            return True
+        if admin_command.type == AdminCommandType.SUMMARY_CLEAR:
+            await actions.send_group_message(event.group_id, "当前没有持久化摘要可清理。")
+            return True
         await actions.send_group_message(event.group_id, "未知命令。")
         return True
 
@@ -115,6 +182,14 @@ async def handle_group_message(
         memory.add_message(
             user_id=event.user_id,
             nickname=event.nickname,
+            content=message_text,
+        )
+    if group_state_store is not None:
+        await group_state_store.add_message(
+            group_id=event.group_id,
+            user_id=event.user_id,
+            nickname=event.nickname,
+            role="user",
             content=message_text,
         )
 
@@ -189,6 +264,14 @@ async def handle_group_message(
             nickname="bot",
             content=reply,
         )
+        if group_state_store is not None:
+            await group_state_store.add_message(
+                group_id=event.group_id,
+                user_id=bot_qq,
+                nickname="bot",
+                role="bot",
+                content=reply,
+            )
 
         logger.info(
             "LLM reply sent to group %s (%d chars)",

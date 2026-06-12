@@ -1,3 +1,3 @@
-from qq_ai_bot.storage.sqlite_store import GroupState, SQLiteStore
+from qq_ai_bot.storage.sqlite_store import GroupState, SQLiteStore, StoredMessage
 
-__all__ = ["GroupState", "SQLiteStore"]
+__all__ = ["GroupState", "SQLiteStore", "StoredMessage"]

@@ -5,7 +5,7 @@ from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.events import GroupMessageEvent
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
-from qq_ai_bot.storage.sqlite_store import GroupState
+from qq_ai_bot.storage.sqlite_store import GroupState, StoredMessage
 from qq_ai_bot.tools.web_search import SearchResult
 
 
@@ -45,6 +45,7 @@ class FakeSearchClient:
 class FakeGroupStateStore:
     def __init__(self, enabled: bool = True) -> None:
         self.state = GroupState(group_id=123456, enabled=enabled, mode="mention_only")
+        self.messages: list[StoredMessage] = []
 
     async def get_group(self, group_id: int) -> GroupState:
         return self.state
@@ -52,6 +53,38 @@ class FakeGroupStateStore:
     async def set_enabled(self, group_id: int, enabled: bool) -> GroupState:
         self.state = GroupState(group_id=group_id, enabled=enabled, mode="mention_only")
         return self.state
+
+    async def add_message(
+        self,
+        *,
+        group_id: int,
+        user_id: int,
+        nickname: str,
+        role: str,
+        content: str,
+    ) -> StoredMessage:
+        message = StoredMessage(
+            id=len(self.messages) + 1,
+            group_id=group_id,
+            user_id=user_id,
+            nickname=nickname,
+            role=role,
+            content=content,
+            created_at="2026-06-13T00:00:00+00:00",
+        )
+        self.messages.append(message)
+        return message
+
+    async def get_recent_messages(self, *, group_id: int, limit: int) -> list[StoredMessage]:
+        return [message for message in self.messages if message.group_id == group_id][-limit:]
+
+    async def count_messages(self, *, group_id: int) -> int:
+        return len([message for message in self.messages if message.group_id == group_id])
+
+    async def clear_messages(self, *, group_id: int) -> int:
+        before = len(self.messages)
+        self.messages = [message for message in self.messages if message.group_id != group_id]
+        return before - len(self.messages)
 
 
 @pytest.mark.anyio
@@ -467,3 +500,196 @@ async def test_cooldown_blocks_second_llm_call() -> None:
     assert second is True
     assert len(llm.calls) == 1
     assert actions.sent == [(123456, "回复")]
+
+
+@pytest.mark.anyio
+async def test_normal_message_persists_to_store() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="普通聊天消息",
+            nickname="Alice",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        group_state_store=store,
+    )
+
+    assert handled is False
+    assert [(message.role, message.content) for message in store.messages] == [
+        ("user", "普通聊天消息")
+    ]
+
+
+@pytest.mark.anyio
+async def test_bot_reply_persists_to_store() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="[CQ:at,qq=999] 你好",
+            nickname="Alice",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=FakeLLM("你好"),
+        memory=GroupMemory(max_messages=10),
+        group_state_store=store,
+    )
+
+    assert handled is True
+    assert [(message.role, message.content) for message in store.messages] == [
+        ("user", "[CQ:at,qq=999] 你好"),
+        ("bot", "你好"),
+    ]
+
+
+@pytest.mark.anyio
+async def test_privacy_request_does_not_persist_to_store() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="[CQ:at,qq=999] 帮我查一下张三手机号",
+            nickname="Alice",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=FakeLLM("不应该调用"),
+        memory=GroupMemory(max_messages=10),
+        group_state_store=store,
+    )
+
+    assert handled is True
+    assert store.messages == []
+
+
+@pytest.mark.anyio
+async def test_admin_summary_recent_calls_llm_with_persisted_context() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    await store.add_message(
+        group_id=123456,
+        user_id=1,
+        nickname="Alice",
+        role="user",
+        content="我们决定先做 SQLite 消息存储",
+    )
+    llm = FakeLLM("总结结果")
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot summary recent",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "总结结果")]
+    prompt_text = "\n".join(message["content"] for message in llm.calls[0])
+    assert "SQLite 消息存储" in prompt_text
+
+
+@pytest.mark.anyio
+async def test_summary_recent_without_llm_replies_unavailable() -> None:
+    actions = FakeActions()
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot summary recent",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=FakeGroupStateStore(enabled=True),
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "当前未配置大模型，无法生成聊天总结。")]
+
+
+@pytest.mark.anyio
+async def test_memory_status_includes_message_count() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    await store.add_message(
+        group_id=123456,
+        user_id=1,
+        nickname="Alice",
+        role="user",
+        content="一条消息",
+    )
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot memory status",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert "messages=1" in actions.sent[0][1]
+
+
+@pytest.mark.anyio
+async def test_memory_clear_removes_messages() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    await store.add_message(
+        group_id=123456,
+        user_id=1,
+        nickname="Alice",
+        role="user",
+        content="一条消息",
+    )
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot memory clear",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert store.messages == []
+    assert actions.sent == [(123456, "已清理 1 条聊天记忆。")]

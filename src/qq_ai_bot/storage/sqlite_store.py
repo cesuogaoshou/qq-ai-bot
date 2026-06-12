@@ -14,6 +14,17 @@ class GroupState:
     mode: str
 
 
+@dataclass(frozen=True)
+class StoredMessage:
+    id: int
+    group_id: int
+    user_id: int
+    nickname: str
+    role: str
+    content: str
+    created_at: str
+
+
 class SQLiteStore:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -32,6 +43,19 @@ class SQLiteStore:
                 mode text not null,
                 created_at text not null,
                 updated_at text not null
+            )
+            """
+        )
+        await db.execute(
+            """
+            create table if not exists messages (
+                id integer primary key autoincrement,
+                group_id integer not null,
+                user_id integer not null,
+                nickname text not null,
+                role text not null,
+                content text not null,
+                created_at text not null
             )
             """
         )
@@ -87,6 +111,86 @@ class SQLiteStore:
         await db.commit()
         return await self.get_group(group_id)
 
+    async def add_message(
+        self,
+        *,
+        group_id: int,
+        user_id: int,
+        nickname: str,
+        role: str,
+        content: str,
+    ) -> StoredMessage:
+        db = await self._connect()
+        created_at = _now_iso()
+        cursor = await db.execute(
+            """
+            insert into messages (group_id, user_id, nickname, role, content, created_at)
+            values (?, ?, ?, ?, ?, ?)
+            """,
+            (group_id, user_id, nickname, role, content, created_at),
+        )
+        try:
+            message_id = int(cursor.lastrowid)
+        finally:
+            await cursor.close()
+        await db.commit()
+        return StoredMessage(
+            id=message_id,
+            group_id=group_id,
+            user_id=user_id,
+            nickname=nickname,
+            role=role,
+            content=content,
+            created_at=created_at,
+        )
+
+    async def get_recent_messages(self, *, group_id: int, limit: int) -> list[StoredMessage]:
+        db = await self._connect()
+        cursor = await db.execute(
+            """
+            select id, group_id, user_id, nickname, role, content, created_at
+            from (
+                select id, group_id, user_id, nickname, role, content, created_at
+                from messages
+                where group_id = ?
+                order by id desc
+                limit ?
+            )
+            order by id asc
+            """,
+            (group_id, limit),
+        )
+        try:
+            rows = await cursor.fetchall()
+        finally:
+            await cursor.close()
+        return [_message_from_row(row) for row in rows]
+
+    async def count_messages(self, *, group_id: int) -> int:
+        db = await self._connect()
+        cursor = await db.execute(
+            "select count(*) from messages where group_id = ?",
+            (group_id,),
+        )
+        try:
+            row = await cursor.fetchone()
+        finally:
+            await cursor.close()
+        return int(row[0]) if row is not None else 0
+
+    async def clear_messages(self, *, group_id: int) -> int:
+        db = await self._connect()
+        cursor = await db.execute(
+            "delete from messages where group_id = ?",
+            (group_id,),
+        )
+        try:
+            deleted = cursor.rowcount
+        finally:
+            await cursor.close()
+        await db.commit()
+        return int(deleted)
+
     async def _connect(self) -> aiosqlite.Connection:
         if self._db is None:
             self._db = await aiosqlite.connect(self.path)
@@ -95,3 +199,15 @@ class SQLiteStore:
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _message_from_row(row) -> StoredMessage:
+    return StoredMessage(
+        id=int(row[0]),
+        group_id=int(row[1]),
+        user_id=int(row[2]),
+        nickname=str(row[3]),
+        role=str(row[4]),
+        content=str(row[5]),
+        created_at=str(row[6]),
+    )
