@@ -24,10 +24,13 @@ dev = [
   "pytest>=8.0"
 ]
 
+[project.scripts]
+qq-ai-bot = "qq_ai_bot.main:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"
 testpaths = ["tests"]
 pythonpath = ["src"]

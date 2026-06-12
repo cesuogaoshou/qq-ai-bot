@@ -48,6 +48,17 @@ python -m venv .venv
 
 本地运行前复制 `.env.example` 为 `.env`，并填写 OneBot、大模型和目标群配置。
 
+M1 本地消息闭环运行：
+
+```powershell
+$env:ONEBOT_WS_URL="ws://127.0.0.1:3001"
+$env:ONEBOT_HTTP_URL="http://127.0.0.1:3000"
+$env:TARGET_GROUP_ID="你的测试群号"
+.\.venv\Scripts\qq-ai-bot.exe
+```
+
+在目标群发送 `/bot ping`，预期机器人回复 `pong`。
+
 ## MVP 成功标准
 
 - 能稳定接收目标群消息。
