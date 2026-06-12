@@ -38,6 +38,16 @@
 - [路线图](docs/roadmap.md)：M1 到长期阶段的推进顺序。
 - [开发规约](docs/development-guidelines.md)：代码边界、测试、安全、日志和配置约定。
 
+## 本地开发
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest
+```
+
+本地运行前复制 `.env.example` 为 `.env`，并填写 OneBot、大模型和目标群配置。
+
 ## MVP 成功标准
 
 - 能稳定接收目标群消息。
