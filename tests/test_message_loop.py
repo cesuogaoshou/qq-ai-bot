@@ -3,7 +3,9 @@ import pytest
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.events import GroupMessageEvent
+from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
+from qq_ai_bot.storage.sqlite_store import GroupState
 from qq_ai_bot.tools.web_search import SearchResult
 
 
@@ -38,6 +40,18 @@ class FakeSearchClient:
                 snippet="今天发布了模型能力说明。",
             )
         ]
+
+
+class FakeGroupStateStore:
+    def __init__(self, enabled: bool = True) -> None:
+        self.state = GroupState(group_id=123456, enabled=enabled, mode="mention_only")
+
+    async def get_group(self, group_id: int) -> GroupState:
+        return self.state
+
+    async def set_enabled(self, group_id: int, enabled: bool) -> GroupState:
+        self.state = GroupState(group_id=group_id, enabled=enabled, mode="mention_only")
+        return self.state
 
 
 @pytest.mark.anyio
@@ -280,3 +294,176 @@ async def test_search_request_continues_without_search_when_disabled() -> None:
     assert handled is True
     assert search.queries == []
     assert actions.sent[0][1] == "普通回答"
+
+
+@pytest.mark.anyio
+async def test_admin_can_turn_bot_off() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="/bot off",
+        nickname="Admin",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert store.state.enabled is False
+    assert actions.sent == [(123456, "机器人已关闭。")]
+
+
+@pytest.mark.anyio
+async def test_non_admin_cannot_turn_bot_off() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=7,
+        message="/bot off",
+        nickname="Bob",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert store.state.enabled is True
+    assert actions.sent == [(123456, "你没有权限执行这个命令。")]
+
+
+@pytest.mark.anyio
+async def test_disabled_group_suppresses_llm_reply() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("不应该发送")
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=7,
+        message="[CQ:at,qq=999] 你好",
+        nickname="Bob",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=GroupMemory(max_messages=10),
+        group_state_store=FakeGroupStateStore(enabled=False),
+    )
+
+    assert handled is True
+    assert llm.calls == []
+    assert actions.sent == []
+
+
+@pytest.mark.anyio
+async def test_admin_can_turn_bot_on_after_disabled() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=False)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="/bot on",
+        nickname="Admin",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=store,
+        admin_qq_ids={42},
+    )
+
+    assert handled is True
+    assert store.state.enabled is True
+    assert actions.sent == [(123456, "机器人已开启。")]
+
+
+@pytest.mark.anyio
+async def test_admin_status_includes_runtime_state() -> None:
+    actions = FakeActions()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="/bot status",
+        nickname="Admin",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        group_state_store=FakeGroupStateStore(enabled=True),
+        admin_qq_ids={42},
+        enable_web_search=False,
+        group_cooldown_seconds=20,
+        user_cooldown_seconds=10,
+    )
+
+    assert handled is True
+    assert "enabled=True" in actions.sent[0][1]
+    assert "mode=mention_only" in actions.sent[0][1]
+    assert "web_search=False" in actions.sent[0][1]
+    assert "group_cooldown=20s" in actions.sent[0][1]
+    assert "user_cooldown=10s" in actions.sent[0][1]
+
+
+@pytest.mark.anyio
+async def test_cooldown_blocks_second_llm_call() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("回复")
+    limiter = CooldownLimiter(group_cooldown_seconds=20, user_cooldown_seconds=10)
+    memory = GroupMemory(max_messages=10)
+
+    first = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="[CQ:at,qq=999] 第一次",
+            nickname="Alice",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+        cooldown_limiter=limiter,
+    )
+    second = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=7,
+            message="[CQ:at,qq=999] 第二次",
+            nickname="Bob",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+        cooldown_limiter=limiter,
+    )
+
+    assert first is True
+    assert second is True
+    assert len(llm.calls) == 1
+    assert actions.sent == [(123456, "回复")]

@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Protocol
 
+from qq_ai_bot.admin.auth import is_admin
+from qq_ai_bot.admin.commands import AdminCommandType, parse_admin_command
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.llm.prompt import build_prompt
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.events import GroupMessageEvent
 from qq_ai_bot.onebot.utils import is_at_bot
+from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.policy.safety import SafetyAction, classify_message_safety
 from qq_ai_bot.policy.tool_trigger import detect_search_trigger
+from qq_ai_bot.storage.sqlite_store import GroupState
 from qq_ai_bot.tools.web_search import SearchDisabledError, WebSearchClient
 
 logger = logging.getLogger(__name__)
@@ -23,6 +27,14 @@ class GroupMessageActions(Protocol):
 
 class LLMChat(Protocol):
     async def chat(self, messages: list[dict[str, str]]) -> str:
+        ...
+
+
+class GroupStateStore(Protocol):
+    async def get_group(self, group_id: int) -> GroupState:
+        ...
+
+    async def set_enabled(self, group_id: int, enabled: bool) -> GroupState:
         ...
 
 
@@ -39,6 +51,11 @@ async def handle_group_message(
     search_budget: DailyUsageBudget | None = None,
     web_search: WebSearchClient | None = None,
     search_max_results: int = 3,
+    group_state_store: GroupStateStore | None = None,
+    admin_qq_ids: set[int] | None = None,
+    cooldown_limiter: CooldownLimiter | None = None,
+    group_cooldown_seconds: int = 20,
+    user_cooldown_seconds: int = 10,
 ) -> bool:
     if event.group_id != target_group_id:
         return False
@@ -50,7 +67,44 @@ async def handle_group_message(
         await actions.send_group_message(event.group_id, "pong")
         return True
 
+    admin_command = parse_admin_command(message_text)
+    if admin_command is not None:
+        if not is_admin(user_id=event.user_id, admin_ids=admin_qq_ids or set()):
+            await actions.send_group_message(event.group_id, "你没有权限执行这个命令。")
+            return True
+        if group_state_store is None:
+            await actions.send_group_message(event.group_id, "运行状态存储未启用。")
+            return True
+        if admin_command.type == AdminCommandType.ON:
+            await group_state_store.set_enabled(event.group_id, True)
+            await actions.send_group_message(event.group_id, "机器人已开启。")
+            return True
+        if admin_command.type == AdminCommandType.OFF:
+            await group_state_store.set_enabled(event.group_id, False)
+            await actions.send_group_message(event.group_id, "机器人已关闭。")
+            return True
+        if admin_command.type == AdminCommandType.STATUS:
+            group_state = await group_state_store.get_group(event.group_id)
+            await actions.send_group_message(
+                event.group_id,
+                (
+                    f"enabled={group_state.enabled} "
+                    f"mode={group_state.mode} "
+                    f"web_search={enable_web_search} "
+                    f"group_cooldown={group_cooldown_seconds}s "
+                    f"user_cooldown={user_cooldown_seconds}s"
+                ),
+            )
+            return True
+        await actions.send_group_message(event.group_id, "未知命令。")
+        return True
+
     at_bot = is_at_bot(event.message, bot_qq=bot_qq)
+    if group_state_store is not None:
+        group_state = await group_state_store.get_group(event.group_id)
+        if not group_state.enabled:
+            return True
+
     safety = classify_message_safety(message_text)
     if safety.action in {SafetyAction.DEESCALATE, SafetyAction.REFUSE} and at_bot:
         if safety.reply:
@@ -66,6 +120,14 @@ async def handle_group_message(
 
     # @ bot — trigger LLM reply
     if llm is not None and memory is not None and at_bot:
+        if cooldown_limiter is not None and not cooldown_limiter.try_consume(
+            group_id=event.group_id,
+            user_id=event.user_id,
+            now=datetime.now(tz=timezone.utc),
+        ):
+            logger.info("Cooldown hit for group %s user %s", event.group_id, event.user_id)
+            return True
+
         search_context: list[str] = []
         search_trigger = detect_search_trigger(message_text)
         if (

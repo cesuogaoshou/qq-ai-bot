@@ -12,7 +12,9 @@ from qq_ai_bot.llm.client import LLMClient
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.actions import OneBotActionClient
 from qq_ai_bot.onebot.client import iter_group_messages
+from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
+from qq_ai_bot.storage.sqlite_store import SQLiteStore
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -69,6 +71,19 @@ def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
     }
 
 
+def build_runtime_dependencies(settings: Settings) -> dict[str, object]:
+    return {
+        "admin_qq_ids": settings.bot_admin_qq_ids,
+        "group_state_store": SQLiteStore(settings.sqlite_path),
+        "cooldown_limiter": CooldownLimiter(
+            group_cooldown_seconds=settings.bot_group_cooldown_seconds,
+            user_cooldown_seconds=settings.bot_user_cooldown_seconds,
+        ),
+        "group_cooldown_seconds": settings.bot_group_cooldown_seconds,
+        "user_cooldown_seconds": settings.bot_user_cooldown_seconds,
+    }
+
+
 async def run() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = load_settings()
@@ -87,34 +102,44 @@ async def run() -> None:
 
     memory = GroupMemory(max_messages=settings.bot_max_context_messages)
     advanced_dependencies = build_advanced_dependencies(settings)
+    runtime_dependencies = build_runtime_dependencies(settings)
+    group_state_store = runtime_dependencies["group_state_store"]
+    if isinstance(group_state_store, SQLiteStore):
+        await group_state_store.init()
+        await group_state_store.ensure_group(settings.target_group_id)
 
-    async with (
-        httpx.AsyncClient(base_url=settings.onebot_http_url, timeout=10) as onebot_http,
-        httpx.AsyncClient(timeout=30) as llm_http,
-    ):
-        actions = OneBotActionClient(
-            http=onebot_http,
-            access_token=settings.onebot_access_token,
-        )
-        llm = build_llm_client(http=llm_http, settings=settings)
+    try:
+        async with (
+            httpx.AsyncClient(base_url=settings.onebot_http_url, timeout=10) as onebot_http,
+            httpx.AsyncClient(timeout=30) as llm_http,
+        ):
+            actions = OneBotActionClient(
+                http=onebot_http,
+                access_token=settings.onebot_access_token,
+            )
+            llm = build_llm_client(http=llm_http, settings=settings)
 
-        ws_url = settings.onebot_ws_url
-        if settings.onebot_access_token:
-            ws_url = f"{settings.onebot_ws_url}?access_token={settings.onebot_access_token}"
-        async with websockets.connect(ws_url) as websocket:
-            async for event in iter_group_messages(websocket):
-                handled = await handle_group_message(
-                    event,
-                    target_group_id=settings.target_group_id,
-                    bot_qq=settings.bot_qq,
-                    actions=actions,
-                    llm=llm,
-                    memory=memory,
-                    **build_handler_options(settings=settings),
-                    **advanced_dependencies,
-                )
-                if handled:
-                    logger.info("Handled message in group %s", event.group_id)
+            ws_url = settings.onebot_ws_url
+            if settings.onebot_access_token:
+                ws_url = f"{settings.onebot_ws_url}?access_token={settings.onebot_access_token}"
+            async with websockets.connect(ws_url) as websocket:
+                async for event in iter_group_messages(websocket):
+                    handled = await handle_group_message(
+                        event,
+                        target_group_id=settings.target_group_id,
+                        bot_qq=settings.bot_qq,
+                        actions=actions,
+                        llm=llm,
+                        memory=memory,
+                        **build_handler_options(settings=settings),
+                        **advanced_dependencies,
+                        **runtime_dependencies,
+                    )
+                    if handled:
+                        logger.info("Handled message in group %s", event.group_id)
+    finally:
+        if isinstance(group_state_store, SQLiteStore):
+            await group_state_store.close()
 
 
 def main() -> None:

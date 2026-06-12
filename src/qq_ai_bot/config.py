@@ -23,6 +23,10 @@ class Settings(BaseModel):
     daily_search_limit_per_group: int = 20
     daily_search_limit_per_user: int = 5
     search_max_results: int = 3
+    bot_admin_qq_ids: set[int] = set()
+    bot_group_cooldown_seconds: int = 20
+    bot_user_cooldown_seconds: int = 10
+    sqlite_path: str = "./data/bot.sqlite3"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -30,6 +34,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int_set(name: str) -> set[int]:
+    value = os.getenv(name, "")
+    if not value.strip():
+        return set()
+    return {int(part.strip()) for part in value.split(",") if part.strip()}
 
 
 def load_settings() -> Settings:
@@ -56,4 +67,8 @@ def load_settings() -> Settings:
         daily_search_limit_per_group=int(os.getenv("DAILY_SEARCH_LIMIT_PER_GROUP", "20")),
         daily_search_limit_per_user=int(os.getenv("DAILY_SEARCH_LIMIT_PER_USER", "5")),
         search_max_results=int(os.getenv("SEARCH_MAX_RESULTS", "3")),
+        bot_admin_qq_ids=_env_int_set("BOT_ADMIN_QQ_IDS"),
+        bot_group_cooldown_seconds=int(os.getenv("BOT_GROUP_COOLDOWN_SECONDS", "20")),
+        bot_user_cooldown_seconds=int(os.getenv("BOT_USER_COOLDOWN_SECONDS", "10")),
+        sqlite_path=os.getenv("SQLITE_PATH", "./data/bot.sqlite3"),
     )

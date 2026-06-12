@@ -10,8 +10,11 @@ from qq_ai_bot.main import (
     build_advanced_dependencies,
     build_handler_options,
     build_llm_client,
+    build_runtime_dependencies,
     build_startup_summary,
 )
+from qq_ai_bot.policy.rate_limit import CooldownLimiter
+from qq_ai_bot.storage.sqlite_store import SQLiteStore
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -89,3 +92,24 @@ def test_build_advanced_dependencies_uses_settings() -> None:
     assert isinstance(deps["search_budget"], DailyUsageBudget)
     assert isinstance(deps["web_search"], DisabledWebSearchClient)
     assert deps["search_max_results"] == 1
+
+
+def test_build_runtime_dependencies_uses_settings() -> None:
+    settings = Settings(
+        onebot_ws_url="ws://127.0.0.1:3001",
+        onebot_http_url="http://127.0.0.1:3000",
+        target_group_id=100,
+        bot_qq=200,
+        bot_admin_qq_ids={1, 2},
+        bot_group_cooldown_seconds=7,
+        bot_user_cooldown_seconds=3,
+        sqlite_path="./data/test.sqlite3",
+    )
+
+    deps = build_runtime_dependencies(settings)
+
+    assert deps["admin_qq_ids"] == {1, 2}
+    assert deps["group_cooldown_seconds"] == 7
+    assert deps["user_cooldown_seconds"] == 3
+    assert isinstance(deps["cooldown_limiter"], CooldownLimiter)
+    assert isinstance(deps["group_state_store"], SQLiteStore)
