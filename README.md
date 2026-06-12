@@ -38,6 +38,7 @@
 - [路线图](docs/roadmap.md)：M1 到长期阶段的推进顺序。
 - [开发规约](docs/development-guidelines.md)：代码边界、测试、安全、日志和配置约定。
 - [M1 本地联调手册](docs/m1-local-runbook.md)：OneBot 协议端接入、环境变量、启动和排错步骤。
+- [M2 本地联调手册](docs/m2-local-runbook.md)：@ 触发大模型回复、上下文和常见问题。
 
 ## 本地开发
 
@@ -49,16 +50,18 @@ python -m venv .venv
 
 本地运行前复制 `.env.example` 为 `.env`，并填写 OneBot、大模型和目标群配置。
 
-M1 本地消息闭环运行：
+M1/M2 本地运行：
 
 ```powershell
 $env:ONEBOT_WS_URL="ws://127.0.0.1:3001"
 $env:ONEBOT_HTTP_URL="http://127.0.0.1:3000"
+$env:BOT_QQ="机器人 QQ 号"
 $env:TARGET_GROUP_ID="你的测试群号"
+$env:LLM_API_KEY="你的 API Key"
 .\.venv\Scripts\qq-ai-bot.exe
 ```
 
-在目标群发送 `/bot ping`，预期机器人回复 `pong`。
+在目标群发送 `/bot ping`，预期机器人回复 `pong`。@ 机器人时，如果已配置 `LLM_API_KEY`，会调用大模型生成回复。
 
 ## MVP 成功标准
 
