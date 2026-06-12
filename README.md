@@ -37,6 +37,7 @@
 - [架构设计](docs/architecture-design.md)：模块边界、数据模型、流程和配置草案。
 - [路线图](docs/roadmap.md)：M1 到长期阶段的推进顺序。
 - [开发规约](docs/development-guidelines.md)：代码边界、测试、安全、日志和配置约定。
+- [M1 本地联调手册](docs/m1-local-runbook.md)：OneBot 协议端接入、环境变量、启动和排错步骤。
 
 ## 本地开发
 
