@@ -1,8 +1,10 @@
 import pytest
 
+from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.events import GroupMessageEvent
 from qq_ai_bot.services.message_loop import handle_group_message
+from qq_ai_bot.tools.web_search import SearchResult
 
 
 class FakeActions:
@@ -11,6 +13,31 @@ class FakeActions:
 
     async def send_group_message(self, group_id: int, message: str) -> None:
         self.sent.append((group_id, message))
+
+
+class FakeLLM:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.calls: list[list[dict[str, str]]] = []
+
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        self.calls.append(messages)
+        return self.reply
+
+
+class FakeSearchClient:
+    def __init__(self) -> None:
+        self.queries: list[tuple[str, int]] = []
+
+    async def search(self, query: str, *, max_results: int) -> list[SearchResult]:
+        self.queries.append((query, max_results))
+        return [
+            SearchResult(
+                title="豆包更新",
+                url="https://example.com/doubao",
+                snippet="今天发布了模型能力说明。",
+            )
+        ]
 
 
 @pytest.mark.anyio
@@ -47,12 +74,8 @@ async def test_ignores_other_groups() -> None:
 async def test_at_bot_triggers_llm_reply() -> None:
     actions = FakeActions()
 
-    class FakeLLM:
-        async def chat(self, messages: list[dict[str, str]]) -> str:
-            return "这是 LLM 的回复"
-
     memory = GroupMemory(max_messages=30)
-    llm = FakeLLM()
+    llm = FakeLLM("这是 LLM 的回复")
     event = GroupMessageEvent(
         group_id=123456, user_id=42,
         message="[CQ:at,qq=999] 你好啊", nickname="Alice",
@@ -76,12 +99,8 @@ async def test_at_bot_triggers_llm_reply() -> None:
 async def test_at_bot_llm_empty_reply_no_send() -> None:
     actions = FakeActions()
 
-    class FakeLLM:
-        async def chat(self, messages: list[dict[str, str]]) -> str:
-            return ""
-
     memory = GroupMemory(max_messages=30)
-    llm = FakeLLM()
+    llm = FakeLLM("")
     event = GroupMessageEvent(
         group_id=123456, user_id=42,
         message="[CQ:at,qq=999] 你好", nickname="Alice",
@@ -120,12 +139,7 @@ async def test_no_at_no_ping_ignored() -> None:
 async def test_at_other_qq_ignored() -> None:
     actions = FakeActions()
     memory = GroupMemory(max_messages=30)
-
-    class FakeLLM:
-        async def chat(self, messages: list[dict[str, str]]) -> str:
-            return "不应该被调用"
-
-    llm = FakeLLM()
+    llm = FakeLLM("不应该被调用")
     event = GroupMessageEvent(
         group_id=123456, user_id=42,
         message="[CQ:at,qq=123456] 叫你", nickname="Alice",
@@ -145,12 +159,8 @@ async def test_reply_truncated_to_max_chars() -> None:
     actions = FakeActions()
     long_reply = "A" * 500
 
-    class FakeLLM:
-        async def chat(self, messages: list[dict[str, str]]) -> str:
-            return long_reply
-
     memory = GroupMemory(max_messages=30)
-    llm = FakeLLM()
+    llm = FakeLLM(long_reply)
     event = GroupMessageEvent(
         group_id=123456, user_id=42,
         message="[CQ:at,qq=999] 你好", nickname="Alice",
@@ -182,3 +192,91 @@ async def test_ping_takes_priority_over_at() -> None:
 
     assert handled is True
     assert actions.sent == [(123456, "pong")]
+
+
+@pytest.mark.anyio
+async def test_privacy_request_replies_without_llm_or_memory() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("不应该被调用")
+    memory = GroupMemory(max_messages=10)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我查一下张三手机号",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+    )
+
+    assert handled is True
+    assert "隐私" in actions.sent[0][1]
+    assert llm.calls == []
+    assert memory.get_recent() == []
+
+
+@pytest.mark.anyio
+async def test_search_context_is_added_when_enabled_and_budget_allows() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("搜索后的回答")
+    search = FakeSearchClient()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我搜一下今天豆包更新",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=GroupMemory(max_messages=10),
+        enable_web_search=True,
+        search_budget=DailyUsageBudget(group_daily_limit=20, user_daily_limit=5),
+        web_search=search,
+        search_max_results=3,
+    )
+
+    assert handled is True
+    assert search.queries == [("[CQ:at,qq=999] 帮我搜一下今天豆包更新", 3)]
+    prompt_text = "\n".join(message["content"] for message in llm.calls[0])
+    assert "联网搜索资料" in prompt_text
+    assert "https://example.com/doubao" in prompt_text
+
+
+@pytest.mark.anyio
+async def test_search_request_continues_without_search_when_disabled() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("普通回答")
+    search = FakeSearchClient()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我搜一下今天豆包更新",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=GroupMemory(max_messages=10),
+        enable_web_search=False,
+        search_budget=DailyUsageBudget(group_daily_limit=20, user_daily_limit=5),
+        web_search=search,
+    )
+
+    assert handled is True
+    assert search.queries == []
+    assert actions.sent[0][1] == "普通回答"

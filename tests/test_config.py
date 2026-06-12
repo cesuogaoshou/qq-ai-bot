@@ -40,6 +40,10 @@ def test_load_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.llm_model == "doubao-seed-2.0-lite"
     assert settings.bot_max_context_messages == 30
     assert settings.bot_max_reply_chars == 300
+    assert settings.enable_web_search is False
+    assert settings.daily_search_limit_per_group == 20
+    assert settings.daily_search_limit_per_user == 5
+    assert settings.search_max_results == 3
 
 
 def test_load_settings_reads_reply_limit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,6 +56,26 @@ def test_load_settings_reads_reply_limit(monkeypatch: pytest.MonkeyPatch) -> Non
     settings = load_settings()
 
     assert settings.bot_max_reply_chars == 120
+
+
+def test_load_settings_reads_advanced_feature_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("ENABLE_WEB_SEARCH", "true")
+    monkeypatch.setenv("DAILY_SEARCH_LIMIT_PER_GROUP", "7")
+    monkeypatch.setenv("DAILY_SEARCH_LIMIT_PER_USER", "2")
+    monkeypatch.setenv("SEARCH_MAX_RESULTS", "1")
+
+    settings = load_settings()
+
+    assert settings.enable_web_search is True
+    assert settings.daily_search_limit_per_group == 7
+    assert settings.daily_search_limit_per_user == 2
+    assert settings.search_max_results == 1
 
 
 def test_load_settings_rejects_missing_target_group(monkeypatch: pytest.MonkeyPatch) -> None:

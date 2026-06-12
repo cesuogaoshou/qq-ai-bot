@@ -23,6 +23,9 @@ venv/
 data/
 logs/
 
+# Local agent plans and execution notes
+docs/superpowers/
+
 # Build artifacts
 build/
 dist/

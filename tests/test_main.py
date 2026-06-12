@@ -3,8 +3,16 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from qq_ai_bot.budget.usage import DailyUsageBudget
+from qq_ai_bot.config import Settings
 from qq_ai_bot.llm.client import LLMClient
-from qq_ai_bot.main import build_handler_options, build_llm_client, build_startup_summary
+from qq_ai_bot.main import (
+    build_advanced_dependencies,
+    build_handler_options,
+    build_llm_client,
+    build_startup_summary,
+)
+from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
 def test_build_startup_summary_hides_secrets() -> None:
@@ -61,3 +69,23 @@ def test_build_handler_options_uses_reply_limit() -> None:
     settings = SimpleNamespace(bot_max_reply_chars=120)
 
     assert build_handler_options(settings=settings) == {"max_reply_chars": 120}
+
+
+def test_build_advanced_dependencies_uses_settings() -> None:
+    settings = Settings(
+        onebot_ws_url="ws://127.0.0.1:3001",
+        onebot_http_url="http://127.0.0.1:3000",
+        target_group_id=100,
+        bot_qq=200,
+        enable_web_search=True,
+        daily_search_limit_per_group=7,
+        daily_search_limit_per_user=2,
+        search_max_results=1,
+    )
+
+    deps = build_advanced_dependencies(settings)
+
+    assert deps["enable_web_search"] is True
+    assert isinstance(deps["search_budget"], DailyUsageBudget)
+    assert isinstance(deps["web_search"], DisabledWebSearchClient)
+    assert deps["search_max_results"] == 1

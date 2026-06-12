@@ -19,6 +19,17 @@ class Settings(BaseModel):
     llm_api_key: str = ""
     bot_max_context_messages: int = 30
     bot_max_reply_chars: int = 300
+    enable_web_search: bool = False
+    daily_search_limit_per_group: int = 20
+    daily_search_limit_per_user: int = 5
+    search_max_results: int = 3
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_settings() -> Settings:
@@ -41,4 +52,8 @@ def load_settings() -> Settings:
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         bot_max_context_messages=int(os.getenv("BOT_MAX_CONTEXT_MESSAGES", "30")),
         bot_max_reply_chars=int(os.getenv("BOT_MAX_REPLY_CHARS", "300")),
+        enable_web_search=_env_bool("ENABLE_WEB_SEARCH", False),
+        daily_search_limit_per_group=int(os.getenv("DAILY_SEARCH_LIMIT_PER_GROUP", "20")),
+        daily_search_limit_per_user=int(os.getenv("DAILY_SEARCH_LIMIT_PER_USER", "5")),
+        search_max_results=int(os.getenv("SEARCH_MAX_RESULTS", "3")),
     )

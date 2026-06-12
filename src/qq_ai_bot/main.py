@@ -6,12 +6,14 @@ import logging
 import httpx
 import websockets
 
-from qq_ai_bot.config import load_settings
+from qq_ai_bot.budget.usage import DailyUsageBudget
+from qq_ai_bot.config import Settings, load_settings
 from qq_ai_bot.llm.client import LLMClient
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.actions import OneBotActionClient
 from qq_ai_bot.onebot.client import iter_group_messages
 from qq_ai_bot.services.message_loop import handle_group_message
+from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,18 @@ def build_handler_options(*, settings) -> dict[str, int]:
     return {"max_reply_chars": settings.bot_max_reply_chars}
 
 
+def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
+    return {
+        "enable_web_search": settings.enable_web_search,
+        "search_budget": DailyUsageBudget(
+            group_daily_limit=settings.daily_search_limit_per_group,
+            user_daily_limit=settings.daily_search_limit_per_user,
+        ),
+        "web_search": DisabledWebSearchClient(),
+        "search_max_results": settings.search_max_results,
+    }
+
+
 async def run() -> None:
     logging.basicConfig(level=logging.INFO)
     settings = load_settings()
@@ -72,6 +86,7 @@ async def run() -> None:
     )
 
     memory = GroupMemory(max_messages=settings.bot_max_context_messages)
+    advanced_dependencies = build_advanced_dependencies(settings)
 
     async with (
         httpx.AsyncClient(base_url=settings.onebot_http_url, timeout=10) as onebot_http,
@@ -96,6 +111,7 @@ async def run() -> None:
                     llm=llm,
                     memory=memory,
                     **build_handler_options(settings=settings),
+                    **advanced_dependencies,
                 )
                 if handled:
                     logger.info("Handled message in group %s", event.group_id)

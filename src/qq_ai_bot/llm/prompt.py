@@ -32,16 +32,28 @@ def build_prompt(
     recent_context: list[dict[str, str]],
     current_message: str,
     current_nickname: str,
+    search_context: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """Construct the full message list for an LLM call.
 
     Structure: system persona → recent group context → current @ message.
     """
-    system_content = f"{DEFAULT_PERSONA}\n\n{_current_date_context()}"
+    system_content = (
+        f"{DEFAULT_PERSONA}\n\n{_current_date_context()}"
+        "\n如果使用联网搜索资料回答，请简短说明信息来自搜索摘要；"
+        "不要大段复制来源原文；不确定的信息要说明不确定。"
+    )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system_content},
     ]
     messages.extend(recent_context)
+    if search_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": "联网搜索资料：\n" + "\n".join(search_context),
+            }
+        )
     messages.append(
         {
             "role": "user",
