@@ -8,6 +8,13 @@ def test_explicit_search_request_triggers_search() -> None:
     assert trigger.reason == "explicit"
 
 
+def test_network_search_wording_triggers_search() -> None:
+    trigger = detect_search_trigger("[CQ:at,qq=999] 联网搜索2025年CET6考题")
+
+    assert trigger.should_search is True
+    assert trigger.reason == "explicit"
+
+
 def test_temporal_question_triggers_search() -> None:
     trigger = detect_search_trigger("现在 Python 最新版本是多少")
 

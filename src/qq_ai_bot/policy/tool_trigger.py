@@ -10,7 +10,15 @@ class SearchTrigger:
     reason: str | None = None
 
 
-_EXPLICIT_SEARCH_TERMS = ("搜一下", "查一下", "帮我查", "帮我搜", "联网查", "网上查")
+_EXPLICIT_SEARCH_TERMS = (
+    "搜一下",
+    "查一下",
+    "帮我查",
+    "帮我搜",
+    "联网查",
+    "联网搜索",
+    "网上查",
+)
 _TEMPORAL_TERMS = ("今天", "现在", "最近", "最新", "刚刚", "新闻", "价格", "政策", "版本")
 
 
