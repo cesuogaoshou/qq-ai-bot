@@ -229,12 +229,29 @@ QQ 语音
 - 需要转码工具。
 - 语音转文字有额外成本。
 - 群语音可能包含隐私。
+- OneBot v11 有 `record` 消息段和 `get_record` API，但实际稳定性取决于当前协议端实现。
 
 结论：
 
 - 不进入 M3/M4。
 - 作为 M6 可选能力。
 - 如果协议端取语音文件不稳定，可以放弃。
+- 不自动转写普通语音消息。
+- 不把语音转写内容写入长期记忆。
+- 只有确认 OneBot 语音事件结构、ffmpeg 转码环境和 ASR 价格后，才进入实现。
+
+建议配置：
+
+```env
+ENABLE_VOICE_TRANSCRIPTION=false
+VOICE_TRANSCRIPTION_PROVIDER=disabled
+VOICE_TRANSCRIPTION_MODEL=
+DAILY_VOICE_LIMIT_PER_GROUP=3
+DAILY_VOICE_LIMIT_PER_USER=1
+VOICE_MAX_SECONDS=60
+VOICE_MAX_BYTES=10485760
+VOICE_RECORD_FORMAT=mp3
+```
 
 ## 模型和价格策略
 
@@ -263,6 +280,7 @@ WEB_SEARCH_BASE_URL=https://api.tavily.com
 ENABLE_IMAGE_INPUT=false
 ENABLE_IMAGE_GENERATION=false
 ENABLE_VOICE_TRANSCRIPTION=false
+VOICE_TRANSCRIPTION_PROVIDER=disabled
 DAILY_SEARCH_LIMIT_PER_GROUP=20
 DAILY_SEARCH_LIMIT_PER_USER=5
 DAILY_IMAGE_LIMIT_PER_GROUP=5
@@ -320,6 +338,7 @@ BOT_MAX_REPLY_CHARS=300
 
 - 火山方舟官方产品与控制台：用于确认豆包模型、视觉、搜索、语音和价格能力。
 - Tavily Search API：当前联网搜索适配器参考。https://docs.tavily.com/api-reference/endpoint/search
+- OneBot v11 消息段和公开 API：语音 `record`、`get_record`、`can_send_record` 能力参考。https://github.com/botuniverse/onebot-11
 - OpenAI API Pricing：作为可选 OpenAI 兼容供应商的价格参考，不作为当前默认模型依据。https://openai.com/api/pricing/
 - OpenAI Web Search Tool：作为搜索工具设计参考，不代表默认接入 OpenAI。https://developers.openai.com/api/docs/guides/tools-web-search
 - OpenAI Images and Vision：作为读图/出图能力设计参考，不代表默认接入 OpenAI。https://developers.openai.com/api/docs/guides/images-vision
