@@ -6,6 +6,7 @@ import pytest
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.config import Settings
 from qq_ai_bot.llm.client import LLMClient
+from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.main import (
     build_advanced_dependencies,
     build_handler_options,
@@ -131,3 +132,16 @@ def test_build_runtime_dependencies_uses_settings() -> None:
     assert deps["user_cooldown_seconds"] == 3
     assert isinstance(deps["cooldown_limiter"], CooldownLimiter)
     assert isinstance(deps["group_state_store"], SQLiteStore)
+
+
+def test_build_runtime_dependencies_includes_image_cache() -> None:
+    settings = Settings(
+        onebot_ws_url="ws://127.0.0.1:3001",
+        onebot_http_url="http://127.0.0.1:3000",
+        target_group_id=100,
+        bot_qq=200,
+    )
+
+    deps = build_runtime_dependencies(settings)
+
+    assert isinstance(deps["image_cache"], RecentImageCache)

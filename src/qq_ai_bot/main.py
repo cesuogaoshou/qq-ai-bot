@@ -9,6 +9,7 @@ import websockets
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.config import Settings, load_settings
 from qq_ai_bot.llm.client import LLMClient
+from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.actions import OneBotActionClient
 from qq_ai_bot.onebot.client import iter_group_messages
@@ -88,6 +89,7 @@ def build_runtime_dependencies(settings: Settings) -> dict[str, object]:
     return {
         "admin_qq_ids": settings.bot_admin_qq_ids,
         "group_state_store": SQLiteStore(settings.sqlite_path),
+        "image_cache": RecentImageCache(),
         "cooldown_limiter": CooldownLimiter(
             group_cooldown_seconds=settings.bot_group_cooldown_seconds,
             user_cooldown_seconds=settings.bot_user_cooldown_seconds,

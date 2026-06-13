@@ -2,6 +2,7 @@ import pytest
 
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.memory.context import GroupMemory
+from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.onebot.events import GroupMessageEvent, ImageAttachment
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
@@ -491,6 +492,53 @@ async def test_explicit_image_request_uses_image_client_when_enabled() -> None:
     assert len(image_client.calls) == 1
     assert image_client.calls[0]["prompt"] == "[CQ:at,qq=999] 帮我看图"
     assert image_client.calls[0]["model"] == "doubao-vision-test"
+
+
+@pytest.mark.anyio
+async def test_image_request_uses_recent_user_image_cache_when_enabled() -> None:
+    actions = FakeActions()
+    image_client = FakeImageUnderstandingClient("缓存图片里有文字。")
+    image_cache = RecentImageCache(max_entries=5)
+
+    first = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="",
+            nickname="Alice",
+            image_attachments=[
+                ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+            ],
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        image_cache=image_cache,
+    )
+    second = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="[CQ:at,qq=999] 提取图中文字",
+            nickname="Alice",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+        image_understanding=image_client,
+        image_input_model="doubao-vision-test",
+        image_cache=image_cache,
+    )
+
+    assert first is False
+    assert second is True
+    assert actions.sent == [(123456, "缓存图片里有文字。")]
+    assert image_client.calls[0]["images"] == [
+        ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+    ]
 
 
 @pytest.mark.anyio

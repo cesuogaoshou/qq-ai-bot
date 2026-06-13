@@ -9,6 +9,7 @@ from qq_ai_bot.admin.commands import AdminCommandType, parse_admin_command
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.llm.prompt import build_prompt
 from qq_ai_bot.memory.context import GroupMemory
+from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.memory.privacy import redact_sensitive_text
 from qq_ai_bot.memory.summary import build_recent_summary_prompt
 from qq_ai_bot.onebot.events import GroupMessageEvent
@@ -91,6 +92,7 @@ async def handle_group_message(
     actions: GroupMessageActions,
     llm: LLMChat | None = None,
     memory: GroupMemory | None = None,
+    image_cache: RecentImageCache | None = None,
     max_reply_chars: int = 300,
     enable_web_search: bool = False,
     search_budget: DailyUsageBudget | None = None,
@@ -113,6 +115,13 @@ async def handle_group_message(
         return False
 
     message_text = event.message.strip()
+
+    if event.image_attachments and image_cache is not None:
+        image_cache.remember(
+            group_id=event.group_id,
+            user_id=event.user_id,
+            images=event.image_attachments,
+        )
 
     # /bot ping — fixed reply, no LLM needed
     if message_text.startswith("/bot ping"):
@@ -218,13 +227,16 @@ async def handle_group_message(
 
     image_trigger = detect_image_trigger(message_text)
     if at_bot and image_trigger.should_process:
+        images = event.image_attachments
+        if not images and image_cache is not None:
+            images = image_cache.get_latest(group_id=event.group_id, user_id=event.user_id)
         if not enable_image_input:
             await actions.send_group_message(
                 event.group_id,
                 "图片理解当前未开启。你可以让管理员确认模型能力和费用后再开启。",
             )
             return True
-        if not event.image_attachments:
+        if not images:
             await actions.send_group_message(
                 event.group_id,
                 "图片理解需要和请求放在同一条消息里，请 @ 我并同时发送图片。",
@@ -243,7 +255,7 @@ async def handle_group_message(
         try:
             reply = await image_understanding.describe(
                 prompt=image_trigger.prompt,
-                images=event.image_attachments,
+                images=images,
                 model=image_input_model,
             )
         except ImageUnderstandingDisabledError:
