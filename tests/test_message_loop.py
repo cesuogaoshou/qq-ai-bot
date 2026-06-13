@@ -86,6 +86,18 @@ class FakeGroupStateStore:
         self.messages = [message for message in self.messages if message.group_id != group_id]
         return before - len(self.messages)
 
+    async def get_message_stats(self, *, group_id: int):
+        from qq_ai_bot.storage.sqlite_store import MessageStats
+
+        messages = [message for message in self.messages if message.group_id == group_id]
+        if not messages:
+            return MessageStats(count=0, oldest_created_at=None, newest_created_at=None)
+        return MessageStats(
+            count=len(messages),
+            oldest_created_at=messages[0].created_at,
+            newest_created_at=messages[-1].created_at,
+        )
+
 
 @pytest.mark.anyio
 async def test_replies_to_ping_in_target_group() -> None:
@@ -733,6 +745,8 @@ async def test_memory_status_includes_message_count() -> None:
 
     assert handled is True
     assert "messages=1" in actions.sent[0][1]
+    assert "oldest=2026-06-13T00:00:00+00:00" in actions.sent[0][1]
+    assert "newest=2026-06-13T00:00:00+00:00" in actions.sent[0][1]
 
 
 @pytest.mark.anyio

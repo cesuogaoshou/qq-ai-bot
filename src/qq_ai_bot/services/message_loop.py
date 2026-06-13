@@ -59,6 +59,9 @@ class GroupStateStore(Protocol):
     async def clear_messages(self, *, group_id: int) -> int:
         ...
 
+    async def get_message_stats(self, *, group_id: int):
+        ...
+
 
 async def handle_group_message(
     event: GroupMessageEvent,
@@ -153,10 +156,15 @@ async def handle_group_message(
                 await actions.send_group_message(event.group_id, reply)
             return True
         if admin_command.type == AdminCommandType.MEMORY_STATUS:
-            count = await group_state_store.count_messages(group_id=event.group_id)
+            stats = await group_state_store.get_message_stats(group_id=event.group_id)
             await actions.send_group_message(
                 event.group_id,
-                f"messages={count} summary=not_persisted",
+                (
+                    f"messages={stats.count} "
+                    f"oldest={stats.oldest_created_at or 'none'} "
+                    f"newest={stats.newest_created_at or 'none'} "
+                    f"summary=not_persisted"
+                ),
             )
             return True
         if admin_command.type == AdminCommandType.MEMORY_CLEAR:

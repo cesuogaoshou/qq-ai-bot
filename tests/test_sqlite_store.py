@@ -125,3 +125,48 @@ async def test_clear_messages_removes_target_group_only() -> None:
         assert await store.count_messages(group_id=200) == 1
     finally:
         await store.close()
+
+
+@pytest.mark.anyio
+async def test_message_stats_include_count_oldest_and_newest() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        await store.add_message(
+            group_id=100,
+            user_id=1,
+            nickname="Alice",
+            role="user",
+            content="第一条",
+        )
+        await store.add_message(
+            group_id=100,
+            user_id=2,
+            nickname="Bob",
+            role="user",
+            content="第二条",
+        )
+
+        stats = await store.get_message_stats(group_id=100)
+
+        assert stats.count == 2
+        assert stats.oldest_created_at is not None
+        assert stats.newest_created_at is not None
+        assert stats.oldest_created_at <= stats.newest_created_at
+    finally:
+        await store.close()
+
+
+@pytest.mark.anyio
+async def test_message_stats_empty_group() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+
+        stats = await store.get_message_stats(group_id=100)
+
+        assert stats.count == 0
+        assert stats.oldest_created_at is None
+        assert stats.newest_created_at is None
+    finally:
+        await store.close()

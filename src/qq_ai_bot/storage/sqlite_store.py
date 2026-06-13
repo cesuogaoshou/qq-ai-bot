@@ -25,6 +25,13 @@ class StoredMessage:
     created_at: str
 
 
+@dataclass(frozen=True)
+class MessageStats:
+    count: int
+    oldest_created_at: str | None
+    newest_created_at: str | None
+
+
 class SQLiteStore:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -190,6 +197,28 @@ class SQLiteStore:
             await cursor.close()
         await db.commit()
         return int(deleted)
+
+    async def get_message_stats(self, *, group_id: int) -> MessageStats:
+        db = await self._connect()
+        cursor = await db.execute(
+            """
+            select count(*), min(created_at), max(created_at)
+            from messages
+            where group_id = ?
+            """,
+            (group_id,),
+        )
+        try:
+            row = await cursor.fetchone()
+        finally:
+            await cursor.close()
+        if row is None:
+            return MessageStats(count=0, oldest_created_at=None, newest_created_at=None)
+        return MessageStats(
+            count=int(row[0]),
+            oldest_created_at=row[1],
+            newest_created_at=row[2],
+        )
 
     async def _connect(self) -> aiosqlite.Connection:
         if self._db is None:
