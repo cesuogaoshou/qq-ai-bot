@@ -226,8 +226,9 @@ async def handle_group_message(
         return True
 
     image_trigger = detect_image_trigger(message_text)
-    should_handle_image_request = image_trigger.should_process and (
-        at_bot or bool(event.image_attachments)
+    should_handle_image_request = (
+        (at_bot and bool(event.image_attachments))
+        or (image_trigger.should_process and (at_bot or bool(event.image_attachments)))
     )
     if should_handle_image_request:
         images = event.image_attachments
@@ -256,8 +257,9 @@ async def handle_group_message(
             await actions.send_group_message(event.group_id, "图片理解今日额度已用完。")
             return True
         try:
+            describe_prompt = image_trigger.prompt or "请描述这张图片的内容。"
             reply = await image_understanding.describe(
-                prompt=image_trigger.prompt,
+                prompt=describe_prompt,
                 images=images,
                 model=image_input_model,
             )

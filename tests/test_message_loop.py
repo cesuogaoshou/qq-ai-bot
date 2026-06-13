@@ -495,6 +495,37 @@ async def test_explicit_image_request_uses_image_client_when_enabled() -> None:
 
 
 @pytest.mark.anyio
+async def test_this_image_content_request_uses_image_client_when_enabled() -> None:
+    actions = FakeActions()
+    image_client = FakeImageUnderstandingClient("图片里有一张聊天截图。")
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 这张图有什么内容",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+        image_understanding=image_client,
+        image_input_model="doubao-seed-2.0-lite",
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "图片里有一张聊天截图。")]
+    assert image_client.calls[0]["prompt"] == "[CQ:at,qq=999] 这张图有什么内容"
+
+
+@pytest.mark.anyio
 async def test_image_request_with_attachment_does_not_require_at_when_enabled() -> None:
     actions = FakeActions()
     image_client = FakeImageUnderstandingClient("图片里写着测试文字。")

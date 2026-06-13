@@ -15,6 +15,13 @@ def test_detect_image_trigger_matches_text_inside_image_wording() -> None:
     assert trigger.prompt == "[CQ:at,qq=999] 提取图中文字"
 
 
+def test_detect_image_trigger_matches_this_image_content_wording() -> None:
+    trigger = detect_image_trigger("[CQ:at,qq=999] 这张图有什么内容")
+
+    assert trigger.should_process is True
+    assert trigger.prompt == "[CQ:at,qq=999] 这张图有什么内容"
+
+
 def test_detect_image_trigger_ignores_plain_chat() -> None:
     trigger = detect_image_trigger("[CQ:at,qq=999] 你好")
 
