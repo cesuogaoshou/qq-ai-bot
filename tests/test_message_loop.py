@@ -650,6 +650,40 @@ async def test_admin_summary_recent_uses_configured_message_limit() -> None:
 
 
 @pytest.mark.anyio
+async def test_admin_summary_recent_reply_truncated_to_max_chars() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    await store.add_message(
+        group_id=123456,
+        user_id=1,
+        nickname="Alice",
+        role="user",
+        content="需要总结的消息",
+    )
+    llm = FakeLLM("A" * 500)
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot summary recent",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        group_state_store=store,
+        admin_qq_ids={42},
+        max_reply_chars=120,
+    )
+
+    assert handled is True
+    assert len(actions.sent) == 1
+    assert len(actions.sent[0][1]) == 120
+
+
+@pytest.mark.anyio
 async def test_summary_recent_without_llm_replies_unavailable() -> None:
     actions = FakeActions()
 

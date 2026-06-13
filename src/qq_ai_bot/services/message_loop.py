@@ -148,6 +148,8 @@ async def handle_group_message(
                 logger.exception("Summary LLM call failed for group %s", event.group_id)
                 return False
             if reply:
+                if len(reply) > max_reply_chars:
+                    reply = reply[:max_reply_chars]
                 await actions.send_group_message(event.group_id, reply)
             return True
         if admin_command.type == AdminCommandType.MEMORY_STATUS:
