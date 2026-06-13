@@ -30,6 +30,10 @@ def clear_optional_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "BOT_GROUP_COOLDOWN_SECONDS",
         "BOT_USER_COOLDOWN_SECONDS",
         "SQLITE_PATH",
+        "ENABLE_DAILY_SUMMARY",
+        "DAILY_SUMMARY_TIME",
+        "DAILY_SUMMARY_LOOKBACK_DAYS",
+        "DAILY_SUMMARY_MAX_MESSAGES",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -89,6 +93,10 @@ def test_load_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.bot_group_cooldown_seconds == 20
     assert settings.bot_user_cooldown_seconds == 10
     assert settings.sqlite_path == "./data/bot.sqlite3"
+    assert settings.enable_daily_summary is False
+    assert settings.daily_summary_time == "09:00"
+    assert settings.daily_summary_lookback_days == 1
+    assert settings.daily_summary_max_messages == 500
 
 
 def test_load_settings_reads_reply_limit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,6 +189,26 @@ def test_load_settings_reads_admin_and_runtime_overrides(
     assert settings.bot_group_cooldown_seconds == 8
     assert settings.bot_user_cooldown_seconds == 3
     assert settings.sqlite_path == "./data/test.sqlite3"
+
+
+def test_load_settings_reads_daily_summary_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("ENABLE_DAILY_SUMMARY", "true")
+    monkeypatch.setenv("DAILY_SUMMARY_TIME", "08:30")
+    monkeypatch.setenv("DAILY_SUMMARY_LOOKBACK_DAYS", "2")
+    monkeypatch.setenv("DAILY_SUMMARY_MAX_MESSAGES", "300")
+
+    settings = load_settings()
+
+    assert settings.enable_daily_summary is True
+    assert settings.daily_summary_time == "08:30"
+    assert settings.daily_summary_lookback_days == 2
+    assert settings.daily_summary_max_messages == 300
 
 
 def test_load_settings_rejects_missing_target_group(monkeypatch: pytest.MonkeyPatch) -> None:

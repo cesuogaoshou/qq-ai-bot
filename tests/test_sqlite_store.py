@@ -224,3 +224,78 @@ async def test_prune_messages_ignores_non_positive_limit() -> None:
         assert await store.count_messages(group_id=100) == 1
     finally:
         await store.close()
+
+
+@pytest.mark.anyio
+async def test_get_messages_between_returns_target_group_messages_in_range() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        db = await store._connect()
+        await db.executemany(
+            """
+            insert into messages (group_id, user_id, nickname, role, content, created_at)
+            values (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (100, 1, "Alice", "user", "before", "2026-06-12T15:59:59+00:00"),
+                (100, 1, "Alice", "user", "first", "2026-06-12T16:00:00+00:00"),
+                (200, 2, "Bob", "user", "other group", "2026-06-12T17:00:00+00:00"),
+                (100, 3, "Carol", "user", "second", "2026-06-13T15:59:59+00:00"),
+                (100, 4, "Dave", "user", "after", "2026-06-13T16:00:00+00:00"),
+            ],
+        )
+        await db.commit()
+
+        messages = await store.get_messages_between(
+            group_id=100,
+            start_at="2026-06-12T16:00:00+00:00",
+            end_at="2026-06-13T16:00:00+00:00",
+            limit=10,
+        )
+
+        assert [message.content for message in messages] == ["first", "second"]
+    finally:
+        await store.close()
+
+
+@pytest.mark.anyio
+async def test_get_messages_between_respects_limit() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        for index in range(3):
+            await store.add_message(
+                group_id=100,
+                user_id=index,
+                nickname=f"User{index}",
+                role="user",
+                content=f"message-{index}",
+            )
+
+        messages = await store.get_messages_between(
+            group_id=100,
+            start_at="2000-01-01T00:00:00+00:00",
+            end_at="2999-01-01T00:00:00+00:00",
+            limit=2,
+        )
+
+        assert [message.content for message in messages] == ["message-0", "message-1"]
+    finally:
+        await store.close()
+
+
+@pytest.mark.anyio
+async def test_daily_summary_marker_prevents_duplicate_pushes() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+
+        assert await store.has_daily_summary(group_id=100, summary_date="2026-06-13") is False
+
+        await store.mark_daily_summary_sent(group_id=100, summary_date="2026-06-13")
+        await store.mark_daily_summary_sent(group_id=100, summary_date="2026-06-13")
+
+        assert await store.has_daily_summary(group_id=100, summary_date="2026-06-13") is True
+    finally:
+        await store.close()

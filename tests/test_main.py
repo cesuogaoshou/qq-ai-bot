@@ -9,6 +9,7 @@ from qq_ai_bot.llm.client import LLMClient
 from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.main import (
     build_advanced_dependencies,
+    build_daily_summary_options,
     build_handler_options,
     build_image_understanding_client,
     build_llm_client,
@@ -134,6 +135,22 @@ def test_build_handler_options_uses_reply_limit() -> None:
         "max_reply_chars": 120,
         "summary_recent_limit": 12,
         "memory_max_messages": 42,
+    }
+
+
+def test_build_daily_summary_options_uses_settings() -> None:
+    settings = SimpleNamespace(
+        daily_summary_time="08:30",
+        daily_summary_lookback_days=2,
+        daily_summary_max_messages=300,
+        bot_max_reply_chars=120,
+    )
+
+    assert build_daily_summary_options(settings=settings) == {
+        "scheduled_time": "08:30",
+        "lookback_days": 2,
+        "max_messages": 300,
+        "max_reply_chars": 120,
     }
 
 

@@ -66,6 +66,16 @@ class SQLiteStore:
             )
             """
         )
+        await db.execute(
+            """
+            create table if not exists daily_summaries (
+                group_id integer not null,
+                summary_date text not null,
+                sent_at text not null,
+                primary key (group_id, summary_date)
+            )
+            """
+        )
         await db.commit()
 
     async def close(self) -> None:
@@ -173,6 +183,33 @@ class SQLiteStore:
             await cursor.close()
         return [_message_from_row(row) for row in rows]
 
+    async def get_messages_between(
+        self,
+        *,
+        group_id: int,
+        start_at: str,
+        end_at: str,
+        limit: int,
+    ) -> list[StoredMessage]:
+        db = await self._connect()
+        cursor = await db.execute(
+            """
+            select id, group_id, user_id, nickname, role, content, created_at
+            from messages
+            where group_id = ?
+              and created_at >= ?
+              and created_at < ?
+            order by id asc
+            limit ?
+            """,
+            (group_id, start_at, end_at, limit),
+        )
+        try:
+            rows = await cursor.fetchall()
+        finally:
+            await cursor.close()
+        return [_message_from_row(row) for row in rows]
+
     async def count_messages(self, *, group_id: int) -> int:
         db = await self._connect()
         cursor = await db.execute(
@@ -244,6 +281,34 @@ class SQLiteStore:
             await cursor.close()
         await db.commit()
         return int(deleted)
+
+    async def has_daily_summary(self, *, group_id: int, summary_date: str) -> bool:
+        db = await self._connect()
+        cursor = await db.execute(
+            """
+            select 1
+            from daily_summaries
+            where group_id = ? and summary_date = ?
+            limit 1
+            """,
+            (group_id, summary_date),
+        )
+        try:
+            row = await cursor.fetchone()
+        finally:
+            await cursor.close()
+        return row is not None
+
+    async def mark_daily_summary_sent(self, *, group_id: int, summary_date: str) -> None:
+        db = await self._connect()
+        await db.execute(
+            """
+            insert or replace into daily_summaries (group_id, summary_date, sent_at)
+            values (?, ?, ?)
+            """,
+            (group_id, summary_date, _now_iso()),
+        )
+        await db.commit()
 
     async def _connect(self) -> aiosqlite.Connection:
         if self._db is None:

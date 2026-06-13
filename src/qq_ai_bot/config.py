@@ -37,6 +37,10 @@ class Settings(BaseModel):
     bot_group_cooldown_seconds: int = 20
     bot_user_cooldown_seconds: int = 10
     sqlite_path: str = "./data/bot.sqlite3"
+    enable_daily_summary: bool = False
+    daily_summary_time: str = "09:00"
+    daily_summary_lookback_days: int = 1
+    daily_summary_max_messages: int = 500
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -91,4 +95,8 @@ def load_settings() -> Settings:
         bot_group_cooldown_seconds=int(os.getenv("BOT_GROUP_COOLDOWN_SECONDS", "20")),
         bot_user_cooldown_seconds=int(os.getenv("BOT_USER_COOLDOWN_SECONDS", "10")),
         sqlite_path=os.getenv("SQLITE_PATH", "./data/bot.sqlite3"),
+        enable_daily_summary=_env_bool("ENABLE_DAILY_SUMMARY", False),
+        daily_summary_time=os.getenv("DAILY_SUMMARY_TIME", "09:00"),
+        daily_summary_lookback_days=int(os.getenv("DAILY_SUMMARY_LOOKBACK_DAYS", "1")),
+        daily_summary_max_messages=int(os.getenv("DAILY_SUMMARY_MAX_MESSAGES", "500")),
     )

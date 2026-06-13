@@ -14,6 +14,10 @@ from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.onebot.actions import OneBotActionClient
 from qq_ai_bot.onebot.client import iter_group_messages
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
+from qq_ai_bot.services.daily_summary import (
+    parse_daily_summary_time,
+    run_daily_summary_scheduler,
+)
 from qq_ai_bot.services.message_loop import handle_group_message
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
 from qq_ai_bot.tools.image_understanding import (
@@ -103,6 +107,15 @@ def build_handler_options(*, settings) -> dict[str, int]:
     }
 
 
+def build_daily_summary_options(*, settings) -> dict[str, int | str]:
+    return {
+        "scheduled_time": settings.daily_summary_time,
+        "lookback_days": settings.daily_summary_lookback_days,
+        "max_messages": settings.daily_summary_max_messages,
+        "max_reply_chars": settings.bot_max_reply_chars,
+    }
+
+
 def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
     return {
         "enable_web_search": settings.enable_web_search,
@@ -179,25 +192,59 @@ async def run() -> None:
                 http=llm_http,
                 settings=settings,
             )
-
-            ws_url = settings.onebot_ws_url
-            if settings.onebot_access_token:
-                ws_url = f"{settings.onebot_ws_url}?access_token={settings.onebot_access_token}"
-            async with websockets.connect(ws_url) as websocket:
-                async for event in iter_group_messages(websocket):
-                    handled = await handle_group_message(
-                        event,
-                        target_group_id=settings.target_group_id,
-                        bot_qq=settings.bot_qq,
-                        actions=actions,
-                        llm=llm,
-                        memory=memory,
-                        **build_handler_options(settings=settings),
-                        **advanced_dependencies,
-                        **runtime_dependencies,
+            daily_summary_task: asyncio.Task | None = None
+            if settings.enable_daily_summary:
+                if llm is None:
+                    logger.warning("Daily summary disabled because LLM is not configured")
+                elif isinstance(group_state_store, SQLiteStore):
+                    daily_summary_options = build_daily_summary_options(settings=settings)
+                    daily_summary_task = asyncio.create_task(
+                        run_daily_summary_scheduler(
+                            group_id=settings.target_group_id,
+                            store=group_state_store,
+                            actions=actions,
+                            llm=llm,
+                            scheduled_time=parse_daily_summary_time(
+                                str(daily_summary_options["scheduled_time"])
+                            ),
+                            lookback_days=int(daily_summary_options["lookback_days"]),
+                            max_messages=int(daily_summary_options["max_messages"]),
+                            max_reply_chars=int(daily_summary_options["max_reply_chars"]),
+                        )
                     )
-                    if handled:
-                        logger.info("Handled message in group %s", event.group_id)
+                    logger.info(
+                        "Daily summary scheduler enabled: time=%s lookback_days=%s max_messages=%s",
+                        daily_summary_options["scheduled_time"],
+                        daily_summary_options["lookback_days"],
+                        daily_summary_options["max_messages"],
+                    )
+
+            try:
+                ws_url = settings.onebot_ws_url
+                if settings.onebot_access_token:
+                    ws_url = f"{settings.onebot_ws_url}?access_token={settings.onebot_access_token}"
+                async with websockets.connect(ws_url) as websocket:
+                    async for event in iter_group_messages(websocket):
+                        handled = await handle_group_message(
+                            event,
+                            target_group_id=settings.target_group_id,
+                            bot_qq=settings.bot_qq,
+                            actions=actions,
+                            llm=llm,
+                            memory=memory,
+                            **build_handler_options(settings=settings),
+                            **advanced_dependencies,
+                            **runtime_dependencies,
+                        )
+                        if handled:
+                            logger.info("Handled message in group %s", event.group_id)
+            finally:
+                if daily_summary_task is not None:
+                    daily_summary_task.cancel()
+                    try:
+                        await daily_summary_task
+                    except asyncio.CancelledError:
+                        pass
     finally:
         if isinstance(group_state_store, SQLiteStore):
             await group_state_store.close()
