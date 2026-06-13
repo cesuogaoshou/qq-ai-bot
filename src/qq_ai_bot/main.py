@@ -56,7 +56,10 @@ def build_llm_client(*, http: httpx.AsyncClient, settings) -> LLMClient | None:
 
 
 def build_handler_options(*, settings) -> dict[str, int]:
-    return {"max_reply_chars": settings.bot_max_reply_chars}
+    return {
+        "max_reply_chars": settings.bot_max_reply_chars,
+        "summary_recent_limit": settings.bot_summary_recent_limit,
+    }
 
 
 def build_advanced_dependencies(settings: Settings) -> dict[str, object]:

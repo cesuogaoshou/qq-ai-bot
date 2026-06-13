@@ -78,6 +78,7 @@ async def handle_group_message(
     cooldown_limiter: CooldownLimiter | None = None,
     group_cooldown_seconds: int = 20,
     user_cooldown_seconds: int = 10,
+    summary_recent_limit: int = 100,
 ) -> bool:
     if event.group_id != target_group_id:
         return False
@@ -127,7 +128,7 @@ async def handle_group_message(
                 return True
             recent_messages = await group_state_store.get_recent_messages(
                 group_id=event.group_id,
-                limit=100,
+                limit=summary_recent_limit,
             )
             if not recent_messages:
                 await actions.send_group_message(event.group_id, "没有可总结的最近聊天记录。")

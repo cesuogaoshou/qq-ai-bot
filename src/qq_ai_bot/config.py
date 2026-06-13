@@ -18,6 +18,7 @@ class Settings(BaseModel):
     llm_model: str = "doubao-seed-2.0-lite"
     llm_api_key: str = ""
     bot_max_context_messages: int = 30
+    bot_summary_recent_limit: int = 100
     bot_max_reply_chars: int = 300
     enable_web_search: bool = False
     daily_search_limit_per_group: int = 20
@@ -62,6 +63,7 @@ def load_settings() -> Settings:
         llm_model=os.getenv("LLM_MODEL", "doubao-seed-2.0-lite"),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         bot_max_context_messages=int(os.getenv("BOT_MAX_CONTEXT_MESSAGES", "30")),
+        bot_summary_recent_limit=int(os.getenv("BOT_SUMMARY_RECENT_LIMIT", "100")),
         bot_max_reply_chars=int(os.getenv("BOT_MAX_REPLY_CHARS", "300")),
         enable_web_search=_env_bool("ENABLE_WEB_SEARCH", False),
         daily_search_limit_per_group=int(os.getenv("DAILY_SEARCH_LIMIT_PER_GROUP", "20")),

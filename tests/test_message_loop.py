@@ -613,6 +613,43 @@ async def test_admin_summary_recent_calls_llm_with_persisted_context() -> None:
 
 
 @pytest.mark.anyio
+async def test_admin_summary_recent_uses_configured_message_limit() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    for index in range(3):
+        await store.add_message(
+            group_id=123456,
+            user_id=index,
+            nickname=f"User{index}",
+            role="user",
+            content=f"消息{index}",
+        )
+    llm = FakeLLM("总结结果")
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="/bot summary recent",
+            nickname="Admin",
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        group_state_store=store,
+        admin_qq_ids={42},
+        summary_recent_limit=2,
+    )
+
+    assert handled is True
+    prompt_text = "\n".join(message["content"] for message in llm.calls[0])
+    assert "消息0" not in prompt_text
+    assert "消息1" in prompt_text
+    assert "消息2" in prompt_text
+
+
+@pytest.mark.anyio
 async def test_summary_recent_without_llm_replies_unavailable() -> None:
     actions = FakeActions()
 

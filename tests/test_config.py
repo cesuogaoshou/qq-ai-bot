@@ -11,6 +11,7 @@ def clear_optional_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "LLM_MODEL",
         "LLM_API_KEY",
         "BOT_MAX_CONTEXT_MESSAGES",
+        "BOT_SUMMARY_RECENT_LIMIT",
         "BOT_MAX_REPLY_CHARS",
         "ENABLE_WEB_SEARCH",
         "DAILY_SEARCH_LIMIT_PER_GROUP",
@@ -60,6 +61,7 @@ def test_load_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.llm_base_url == "https://ark.cn-beijing.volces.com/api/v3"
     assert settings.llm_model == "doubao-seed-2.0-lite"
     assert settings.bot_max_context_messages == 30
+    assert settings.bot_summary_recent_limit == 100
     assert settings.bot_max_reply_chars == 300
     assert settings.enable_web_search is False
     assert settings.daily_search_limit_per_group == 20
@@ -81,6 +83,18 @@ def test_load_settings_reads_reply_limit(monkeypatch: pytest.MonkeyPatch) -> Non
     settings = load_settings()
 
     assert settings.bot_max_reply_chars == 120
+
+
+def test_load_settings_reads_summary_recent_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("BOT_SUMMARY_RECENT_LIMIT", "12")
+
+    settings = load_settings()
+
+    assert settings.bot_summary_recent_limit == 12
 
 
 def test_load_settings_reads_advanced_feature_overrides(
