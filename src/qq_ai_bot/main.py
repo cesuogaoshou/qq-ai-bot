@@ -16,7 +16,10 @@ from qq_ai_bot.onebot.client import iter_group_messages
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
-from qq_ai_bot.tools.image_understanding import DisabledImageUnderstandingClient
+from qq_ai_bot.tools.image_understanding import (
+    ArkImageUnderstandingClient,
+    DisabledImageUnderstandingClient,
+)
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -53,6 +56,24 @@ def build_llm_client(*, http: httpx.AsyncClient, settings) -> LLMClient | None:
         http=http,
         base_url=settings.llm_base_url,
         model=settings.llm_model,
+        api_key=settings.llm_api_key,
+    )
+
+
+def build_image_understanding_client(
+    *,
+    http: httpx.AsyncClient,
+    settings,
+) -> ArkImageUnderstandingClient | DisabledImageUnderstandingClient:
+    if not settings.enable_image_input:
+        return DisabledImageUnderstandingClient()
+    if not settings.image_input_model:
+        return DisabledImageUnderstandingClient()
+    if not settings.llm_api_key:
+        return DisabledImageUnderstandingClient()
+    return ArkImageUnderstandingClient(
+        http=http,
+        base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
     )
 
@@ -133,6 +154,10 @@ async def run() -> None:
                 access_token=settings.onebot_access_token,
             )
             llm = build_llm_client(http=llm_http, settings=settings)
+            advanced_dependencies["image_understanding"] = build_image_understanding_client(
+                http=llm_http,
+                settings=settings,
+            )
 
             ws_url = settings.onebot_ws_url
             if settings.onebot_access_token:

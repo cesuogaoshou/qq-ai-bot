@@ -10,13 +10,17 @@ from qq_ai_bot.memory.image_cache import RecentImageCache
 from qq_ai_bot.main import (
     build_advanced_dependencies,
     build_handler_options,
+    build_image_understanding_client,
     build_llm_client,
     build_runtime_dependencies,
     build_startup_summary,
 )
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
-from qq_ai_bot.tools.image_understanding import DisabledImageUnderstandingClient
+from qq_ai_bot.tools.image_understanding import (
+    ArkImageUnderstandingClient,
+    DisabledImageUnderstandingClient,
+)
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -68,6 +72,36 @@ async def test_build_llm_client_returns_client_with_api_key() -> None:
         client = build_llm_client(http=http, settings=settings)
 
     assert isinstance(client, LLMClient)
+
+
+@pytest.mark.anyio
+async def test_build_image_understanding_client_returns_disabled_when_feature_off() -> None:
+    settings = SimpleNamespace(
+        enable_image_input=False,
+        image_input_model="doubao-vision-test",
+        llm_base_url="https://test.api",
+        llm_api_key="secret-key",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_image_understanding_client(http=http, settings=settings)
+
+    assert isinstance(client, DisabledImageUnderstandingClient)
+
+
+@pytest.mark.anyio
+async def test_build_image_understanding_client_returns_ark_client_when_configured() -> None:
+    settings = SimpleNamespace(
+        enable_image_input=True,
+        image_input_model="doubao-vision-test",
+        llm_base_url="https://test.api",
+        llm_api_key="secret-key",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_image_understanding_client(http=http, settings=settings)
+
+    assert isinstance(client, ArkImageUnderstandingClient)
 
 
 def test_build_handler_options_uses_reply_limit() -> None:
