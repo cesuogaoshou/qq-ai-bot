@@ -258,13 +258,13 @@ async def handle_group_message(
             await actions.send_group_message(event.group_id, reply)
         return True
 
-    if memory is not None:
+    if message_text and memory is not None:
         memory.add_message(
             user_id=event.user_id,
             nickname=event.nickname,
             content=message_text,
         )
-    if group_state_store is not None:
+    if message_text and group_state_store is not None:
         await group_state_store.add_message(
             group_id=event.group_id,
             user_id=event.user_id,

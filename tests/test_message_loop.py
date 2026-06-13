@@ -692,6 +692,35 @@ async def test_normal_message_persists_to_store() -> None:
 
 
 @pytest.mark.anyio
+async def test_image_only_message_does_not_persist_empty_memory() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    memory = GroupMemory(max_messages=10)
+
+    handled = await handle_group_message(
+        GroupMessageEvent(
+            group_id=123456,
+            user_id=42,
+            message="",
+            nickname="Alice",
+            image_attachments=[
+                ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+            ],
+        ),
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=memory,
+        group_state_store=store,
+    )
+
+    assert handled is False
+    assert actions.sent == []
+    assert memory.get_recent() == []
+    assert store.messages == []
+
+
+@pytest.mark.anyio
 async def test_normal_messages_are_pruned_to_memory_limit() -> None:
     actions = FakeActions()
     store = FakeGroupStateStore(enabled=True)
