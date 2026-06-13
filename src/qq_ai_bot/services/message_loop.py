@@ -226,7 +226,10 @@ async def handle_group_message(
         return True
 
     image_trigger = detect_image_trigger(message_text)
-    if at_bot and image_trigger.should_process:
+    should_handle_image_request = image_trigger.should_process and (
+        at_bot or bool(event.image_attachments)
+    )
+    if should_handle_image_request:
         images = event.image_attachments
         if not images and image_cache is not None:
             images = image_cache.get_latest(group_id=event.group_id, user_id=event.user_id)
