@@ -146,6 +146,16 @@ async def handle_group_message(
             return True
         if admin_command.type == AdminCommandType.STATUS:
             group_state = await group_state_store.get_group(event.group_id)
+            search_group_limit = (
+                f"{search_budget.group_daily_limit}/day"
+                if search_budget is not None
+                else "none"
+            )
+            search_user_limit = (
+                f"{search_budget.user_daily_limit}/day"
+                if search_budget is not None
+                else "none"
+            )
             image_group_limit = (
                 f"{image_budget.group_daily_limit}/day" if image_budget is not None else "none"
             )
@@ -158,6 +168,8 @@ async def handle_group_message(
                     f"enabled={group_state.enabled} "
                     f"mode={group_state.mode} "
                     f"web_search={enable_web_search} "
+                    f"search_limit_group={search_group_limit} "
+                    f"search_limit_user={search_user_limit} "
                     f"image_input={enable_image_input} "
                     f"image_model={image_input_model or 'default'} "
                     f"image_limit_group={image_group_limit} "
@@ -385,11 +397,19 @@ async def handle_group_message(
             reply = await llm.chat(messages)
         except Exception:
             logger.exception("LLM chat failed for group %s", event.group_id)
-            return False
+            await actions.send_group_message(
+                event.group_id,
+                "刚刚没想好，稍后再问试试。",
+            )
+            return True
 
         if not reply:
             logger.info("LLM returned empty reply for group %s", event.group_id)
-            return True  # handled (we saw the @), just nothing to say
+            await actions.send_group_message(
+                event.group_id,
+                "刚刚没想好，稍后再问试试。",
+            )
+            return True
 
         # Truncate if too long
         if len(reply) > max_reply_chars:

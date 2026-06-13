@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 DEFAULT_PERSONA = (
@@ -15,6 +16,8 @@ DEFAULT_PERSONA = (
 
 CURRENT_MESSAGE_TEMPLATE = "{nickname} @了你，说：{message}"
 
+_CQ_SEGMENT_RE = re.compile(r"\[CQ:[^\]]+\]")
+
 
 def _current_date_context() -> str:
     now = datetime.now(tz=timezone.utc).astimezone()
@@ -24,7 +27,8 @@ def _current_date_context() -> str:
         "请不要说你不知道当前时间或你的知识截止于某个日期。"
     )
 
-CURRENT_MESSAGE_TEMPLATE = "{nickname} @了你，说：{message}"
+def sanitize_cq_codes(text: str) -> str:
+    return " ".join(_CQ_SEGMENT_RE.sub(" ", text).split())
 
 
 def build_prompt(
@@ -46,7 +50,13 @@ def build_prompt(
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system_content},
     ]
-    messages.extend(recent_context)
+    messages.extend(
+        {
+            **message,
+            "content": sanitize_cq_codes(message.get("content", "")),
+        }
+        for message in recent_context
+    )
     if search_context:
         messages.append(
             {
@@ -59,7 +69,7 @@ def build_prompt(
             "role": "user",
             "content": CURRENT_MESSAGE_TEMPLATE.format(
                 nickname=current_nickname,
-                message=current_message,
+                message=sanitize_cq_codes(current_message),
             ),
         }
     )

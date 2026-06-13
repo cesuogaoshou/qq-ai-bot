@@ -29,6 +29,11 @@ class FakeLLM:
         return self.reply
 
 
+class FailingLLM:
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        raise RuntimeError("llm failed")
+
+
 class FakeSearchClient:
     def __init__(self) -> None:
         self.queries: list[tuple[str, int]] = []
@@ -197,7 +202,7 @@ async def test_at_bot_triggers_llm_reply() -> None:
 
 
 @pytest.mark.anyio
-async def test_at_bot_llm_empty_reply_no_send() -> None:
+async def test_at_bot_llm_empty_reply_sends_retry_hint() -> None:
     actions = FakeActions()
 
     memory = GroupMemory(max_messages=30)
@@ -213,7 +218,30 @@ async def test_at_bot_llm_empty_reply_no_send() -> None:
     )
 
     assert handled is True
-    assert actions.sent == []
+    assert actions.sent == [(123456, "刚刚没想好，稍后再问试试。")]
+
+
+@pytest.mark.anyio
+async def test_at_bot_llm_exception_sends_retry_hint() -> None:
+    actions = FakeActions()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 你好",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=FailingLLM(),
+        memory=GroupMemory(max_messages=30),
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "刚刚没想好，稍后再问试试。")]
 
 
 @pytest.mark.anyio
@@ -866,6 +894,7 @@ async def test_admin_status_includes_runtime_state() -> None:
         group_state_store=FakeGroupStateStore(enabled=True),
         admin_qq_ids={42},
         enable_web_search=False,
+        search_budget=DailyUsageBudget(group_daily_limit=20, user_daily_limit=5),
         enable_image_input=True,
         image_budget=DailyUsageBudget(group_daily_limit=7, user_daily_limit=3),
         image_input_model="doubao-seed-2.0-lite",
@@ -879,6 +908,8 @@ async def test_admin_status_includes_runtime_state() -> None:
     assert "enabled=True" in actions.sent[0][1]
     assert "mode=mention_only" in actions.sent[0][1]
     assert "web_search=False" in actions.sent[0][1]
+    assert "search_limit_group=20/day" in actions.sent[0][1]
+    assert "search_limit_user=5/day" in actions.sent[0][1]
     assert "image_input=True" in actions.sent[0][1]
     assert "image_model=doubao-seed-2.0-lite" in actions.sent[0][1]
     assert "image_limit_group=7/day" in actions.sent[0][1]
