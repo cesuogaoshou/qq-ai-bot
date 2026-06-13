@@ -360,6 +360,12 @@ async def handle_group_message(
             except Exception:
                 logger.exception("Web search failed for group %s", event.group_id)
             else:
+                logger.info(
+                    "Web search succeeded: group=%s user=%s results=%d",
+                    event.group_id,
+                    event.user_id,
+                    len(results),
+                )
                 search_context = [
                     f"来源 {index}: {result.title} - {result.snippet} {result.url}"
                     for index, result in enumerate(results, start=1)

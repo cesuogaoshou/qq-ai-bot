@@ -355,6 +355,39 @@ async def test_search_context_is_added_when_enabled_and_budget_allows() -> None:
 
 
 @pytest.mark.anyio
+async def test_search_success_logs_short_info(caplog) -> None:
+    actions = FakeActions()
+    llm = FakeLLM("搜索后的回答")
+    search = FakeSearchClient()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我搜一下今天豆包更新",
+        nickname="Alice",
+    )
+
+    with caplog.at_level(logging.INFO, logger="qq_ai_bot.services.message_loop"):
+        handled = await handle_group_message(
+            event,
+            target_group_id=123456,
+            bot_qq=999,
+            actions=actions,
+            llm=llm,
+            memory=GroupMemory(max_messages=10),
+            enable_web_search=True,
+            search_budget=DailyUsageBudget(group_daily_limit=20, user_daily_limit=5),
+            web_search=search,
+            search_max_results=3,
+        )
+
+    assert handled is True
+    assert "Web search succeeded" in caplog.text
+    assert "group=123456" in caplog.text
+    assert "user=42" in caplog.text
+    assert "results=1" in caplog.text
+
+
+@pytest.mark.anyio
 async def test_search_request_continues_without_search_when_disabled() -> None:
     actions = FakeActions()
     llm = FakeLLM("普通回答")
