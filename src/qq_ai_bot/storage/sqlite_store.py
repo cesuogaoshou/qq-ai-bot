@@ -220,6 +220,31 @@ class SQLiteStore:
             newest_created_at=row[2],
         )
 
+    async def prune_messages(self, *, group_id: int, keep_latest: int) -> int:
+        if keep_latest <= 0:
+            return 0
+        db = await self._connect()
+        cursor = await db.execute(
+            """
+            delete from messages
+            where group_id = ?
+              and id not in (
+                select id
+                from messages
+                where group_id = ?
+                order by id desc
+                limit ?
+              )
+            """,
+            (group_id, group_id, keep_latest),
+        )
+        try:
+            deleted = cursor.rowcount
+        finally:
+            await cursor.close()
+        await db.commit()
+        return int(deleted)
+
     async def _connect(self) -> aiosqlite.Connection:
         if self._db is None:
             self._db = await aiosqlite.connect(self.path)

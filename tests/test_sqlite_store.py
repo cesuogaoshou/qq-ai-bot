@@ -170,3 +170,57 @@ async def test_message_stats_empty_group() -> None:
         assert stats.newest_created_at is None
     finally:
         await store.close()
+
+
+@pytest.mark.anyio
+async def test_prune_messages_keeps_latest_for_target_group_only() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        for index in range(5):
+            await store.add_message(
+                group_id=100,
+                user_id=index,
+                nickname=f"User{index}",
+                role="user",
+                content=f"目标{index}",
+            )
+        await store.add_message(
+            group_id=200,
+            user_id=1,
+            nickname="Other",
+            role="user",
+            content="其他群",
+        )
+
+        deleted = await store.prune_messages(group_id=100, keep_latest=2)
+
+        assert deleted == 3
+        assert [message.content for message in await store.get_recent_messages(group_id=100, limit=10)] == [
+            "目标3",
+            "目标4",
+        ]
+        assert await store.count_messages(group_id=200) == 1
+    finally:
+        await store.close()
+
+
+@pytest.mark.anyio
+async def test_prune_messages_ignores_non_positive_limit() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        await store.add_message(
+            group_id=100,
+            user_id=1,
+            nickname="Alice",
+            role="user",
+            content="保留",
+        )
+
+        deleted = await store.prune_messages(group_id=100, keep_latest=0)
+
+        assert deleted == 0
+        assert await store.count_messages(group_id=100) == 1
+    finally:
+        await store.close()

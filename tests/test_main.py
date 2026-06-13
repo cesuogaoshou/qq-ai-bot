@@ -69,11 +69,16 @@ async def test_build_llm_client_returns_client_with_api_key() -> None:
 
 
 def test_build_handler_options_uses_reply_limit() -> None:
-    settings = SimpleNamespace(bot_max_reply_chars=120, bot_summary_recent_limit=12)
+    settings = SimpleNamespace(
+        bot_max_reply_chars=120,
+        bot_summary_recent_limit=12,
+        bot_memory_max_messages=42,
+    )
 
     assert build_handler_options(settings=settings) == {
         "max_reply_chars": 120,
         "summary_recent_limit": 12,
+        "memory_max_messages": 42,
     }
 
 

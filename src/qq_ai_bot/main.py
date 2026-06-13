@@ -59,6 +59,7 @@ def build_handler_options(*, settings) -> dict[str, int]:
     return {
         "max_reply_chars": settings.bot_max_reply_chars,
         "summary_recent_limit": settings.bot_summary_recent_limit,
+        "memory_max_messages": settings.bot_memory_max_messages,
     }
 
 

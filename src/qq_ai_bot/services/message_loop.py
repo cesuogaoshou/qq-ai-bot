@@ -62,6 +62,9 @@ class GroupStateStore(Protocol):
     async def get_message_stats(self, *, group_id: int):
         ...
 
+    async def prune_messages(self, *, group_id: int, keep_latest: int) -> int:
+        ...
+
 
 async def handle_group_message(
     event: GroupMessageEvent,
@@ -82,6 +85,7 @@ async def handle_group_message(
     group_cooldown_seconds: int = 20,
     user_cooldown_seconds: int = 10,
     summary_recent_limit: int = 100,
+    memory_max_messages: int = 5000,
 ) -> bool:
     if event.group_id != target_group_id:
         return False
@@ -203,6 +207,10 @@ async def handle_group_message(
             role="user",
             content=message_text,
         )
+        await group_state_store.prune_messages(
+            group_id=event.group_id,
+            keep_latest=memory_max_messages,
+        )
 
     # @ bot — trigger LLM reply
     if llm is not None and memory is not None and at_bot:
@@ -282,6 +290,10 @@ async def handle_group_message(
                 nickname="bot",
                 role="bot",
                 content=reply,
+            )
+            await group_state_store.prune_messages(
+                group_id=event.group_id,
+                keep_latest=memory_max_messages,
             )
 
         logger.info(

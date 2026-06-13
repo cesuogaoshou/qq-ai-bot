@@ -98,6 +98,19 @@ class FakeGroupStateStore:
             newest_created_at=messages[-1].created_at,
         )
 
+    async def prune_messages(self, *, group_id: int, keep_latest: int) -> int:
+        if keep_latest <= 0:
+            return 0
+        target = [message for message in self.messages if message.group_id == group_id]
+        keep_ids = {message.id for message in target[-keep_latest:]}
+        before = len(self.messages)
+        self.messages = [
+            message
+            for message in self.messages
+            if message.group_id != group_id or message.id in keep_ids
+        ]
+        return before - len(self.messages)
+
 
 @pytest.mark.anyio
 async def test_replies_to_ping_in_target_group() -> None:
@@ -537,6 +550,31 @@ async def test_normal_message_persists_to_store() -> None:
     assert [(message.role, message.content) for message in store.messages] == [
         ("user", "普通聊天消息")
     ]
+
+
+@pytest.mark.anyio
+async def test_normal_messages_are_pruned_to_memory_limit() -> None:
+    actions = FakeActions()
+    store = FakeGroupStateStore(enabled=True)
+    memory = GroupMemory(max_messages=10)
+
+    for index in range(3):
+        await handle_group_message(
+            GroupMessageEvent(
+                group_id=123456,
+                user_id=index,
+                message=f"消息{index}",
+                nickname=f"User{index}",
+            ),
+            target_group_id=123456,
+            bot_qq=999,
+            actions=actions,
+            memory=memory,
+            group_state_store=store,
+            memory_max_messages=2,
+        )
+
+    assert [message.content for message in store.messages] == ["消息1", "消息2"]
 
 
 @pytest.mark.anyio
