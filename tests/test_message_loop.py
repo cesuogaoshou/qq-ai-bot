@@ -2,7 +2,7 @@ import pytest
 
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.memory.context import GroupMemory
-from qq_ai_bot.onebot.events import GroupMessageEvent
+from qq_ai_bot.onebot.events import GroupMessageEvent, ImageAttachment
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
 from qq_ai_bot.storage.sqlite_store import GroupState, StoredMessage
@@ -40,6 +40,22 @@ class FakeSearchClient:
                 snippet="今天发布了模型能力说明。",
             )
         ]
+
+
+class FakeImageUnderstandingClient:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.calls: list[dict[str, object]] = []
+
+    async def describe(
+        self,
+        *,
+        prompt: str,
+        images: list[ImageAttachment],
+        model: str,
+    ) -> str:
+        self.calls.append({"prompt": prompt, "images": images, "model": model})
+        return self.reply
 
 
 class FakeGroupStateStore:
@@ -352,6 +368,73 @@ async def test_search_request_continues_without_search_when_disabled() -> None:
     assert handled is True
     assert search.queries == []
     assert actions.sent[0][1] == "普通回答"
+
+
+@pytest.mark.anyio
+async def test_explicit_image_request_replies_disabled_without_llm_or_memory() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("不应该调用")
+    memory = GroupMemory(max_messages=10)
+    store = FakeGroupStateStore(enabled=True)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我看下这张截图",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+        group_state_store=store,
+        enable_image_input=False,
+    )
+
+    assert handled is True
+    assert "图片理解当前未开启" in actions.sent[0][1]
+    assert llm.calls == []
+    assert memory.get_recent() == []
+    assert store.messages == []
+
+
+@pytest.mark.anyio
+async def test_explicit_image_request_uses_image_client_when_enabled() -> None:
+    actions = FakeActions()
+    image_client = FakeImageUnderstandingClient("图片里是一段错误日志。")
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 帮我看图",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+        image_understanding=image_client,
+        image_input_model="doubao-vision-test",
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "图片里是一段错误日志。")]
+    assert len(image_client.calls) == 1
+    assert image_client.calls[0]["prompt"] == "[CQ:at,qq=999] 帮我看图"
+    assert image_client.calls[0]["model"] == "doubao-vision-test"
 
 
 @pytest.mark.anyio

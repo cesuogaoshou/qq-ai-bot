@@ -15,6 +15,7 @@ from qq_ai_bot.main import (
 )
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
+from qq_ai_bot.tools.image_understanding import DisabledImageUnderstandingClient
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -92,6 +93,10 @@ def test_build_advanced_dependencies_uses_settings() -> None:
         daily_search_limit_per_group=7,
         daily_search_limit_per_user=2,
         search_max_results=1,
+        enable_image_input=True,
+        daily_image_limit_per_group=3,
+        image_input_model="doubao-vision-test",
+        image_max_bytes=1024,
     )
 
     deps = build_advanced_dependencies(settings)
@@ -100,6 +105,11 @@ def test_build_advanced_dependencies_uses_settings() -> None:
     assert isinstance(deps["search_budget"], DailyUsageBudget)
     assert isinstance(deps["web_search"], DisabledWebSearchClient)
     assert deps["search_max_results"] == 1
+    assert deps["enable_image_input"] is True
+    assert isinstance(deps["image_budget"], DailyUsageBudget)
+    assert isinstance(deps["image_understanding"], DisabledImageUnderstandingClient)
+    assert deps["image_input_model"] == "doubao-vision-test"
+    assert deps["image_max_bytes"] == 1024
 
 
 def test_build_runtime_dependencies_uses_settings() -> None:

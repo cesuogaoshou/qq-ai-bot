@@ -15,6 +15,7 @@ from qq_ai_bot.onebot.client import iter_group_messages
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.services.message_loop import handle_group_message
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
+from qq_ai_bot.tools.image_understanding import DisabledImageUnderstandingClient
 from qq_ai_bot.tools.web_search import DisabledWebSearchClient
 
 
@@ -72,6 +73,14 @@ def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
         ),
         "web_search": DisabledWebSearchClient(),
         "search_max_results": settings.search_max_results,
+        "enable_image_input": settings.enable_image_input,
+        "image_budget": DailyUsageBudget(
+            group_daily_limit=settings.daily_image_limit_per_group,
+            user_daily_limit=settings.daily_image_limit_per_group,
+        ),
+        "image_understanding": DisabledImageUnderstandingClient(),
+        "image_input_model": settings.image_input_model,
+        "image_max_bytes": settings.image_max_bytes,
     }
 
 

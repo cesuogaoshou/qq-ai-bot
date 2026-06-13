@@ -25,6 +25,10 @@ class Settings(BaseModel):
     daily_search_limit_per_group: int = 20
     daily_search_limit_per_user: int = 5
     search_max_results: int = 3
+    enable_image_input: bool = False
+    daily_image_limit_per_group: int = 5
+    image_input_model: str = ""
+    image_max_bytes: int = 5_242_880
     bot_admin_qq_ids: set[int] = set()
     bot_group_cooldown_seconds: int = 20
     bot_user_cooldown_seconds: int = 10
@@ -71,6 +75,10 @@ def load_settings() -> Settings:
         daily_search_limit_per_group=int(os.getenv("DAILY_SEARCH_LIMIT_PER_GROUP", "20")),
         daily_search_limit_per_user=int(os.getenv("DAILY_SEARCH_LIMIT_PER_USER", "5")),
         search_max_results=int(os.getenv("SEARCH_MAX_RESULTS", "3")),
+        enable_image_input=_env_bool("ENABLE_IMAGE_INPUT", False),
+        daily_image_limit_per_group=int(os.getenv("DAILY_IMAGE_LIMIT_PER_GROUP", "5")),
+        image_input_model=os.getenv("IMAGE_INPUT_MODEL", ""),
+        image_max_bytes=int(os.getenv("IMAGE_MAX_BYTES", "5242880")),
         bot_admin_qq_ids=_env_int_set("BOT_ADMIN_QQ_IDS"),
         bot_group_cooldown_seconds=int(os.getenv("BOT_GROUP_COOLDOWN_SECONDS", "20")),
         bot_user_cooldown_seconds=int(os.getenv("BOT_USER_COOLDOWN_SECONDS", "10")),

@@ -12,11 +12,17 @@ from qq_ai_bot.memory.context import GroupMemory
 from qq_ai_bot.memory.privacy import redact_sensitive_text
 from qq_ai_bot.memory.summary import build_recent_summary_prompt
 from qq_ai_bot.onebot.events import GroupMessageEvent
+from qq_ai_bot.onebot.events import ImageAttachment
+from qq_ai_bot.policy.image_trigger import detect_image_trigger
 from qq_ai_bot.onebot.utils import is_at_bot
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.policy.safety import SafetyAction, classify_message_safety
 from qq_ai_bot.policy.tool_trigger import detect_search_trigger
 from qq_ai_bot.storage.sqlite_store import GroupState
+from qq_ai_bot.tools.image_understanding import (
+    ImageUnderstandingClient,
+    ImageUnderstandingDisabledError,
+)
 from qq_ai_bot.tools.web_search import SearchDisabledError, WebSearchClient
 
 logger = logging.getLogger(__name__)
@@ -29,6 +35,17 @@ class GroupMessageActions(Protocol):
 
 class LLMChat(Protocol):
     async def chat(self, messages: list[dict[str, str]]) -> str:
+        ...
+
+
+class ImageUnderstanding(Protocol):
+    async def describe(
+        self,
+        *,
+        prompt: str,
+        images: list[ImageAttachment],
+        model: str,
+    ) -> str:
         ...
 
 
@@ -79,6 +96,11 @@ async def handle_group_message(
     search_budget: DailyUsageBudget | None = None,
     web_search: WebSearchClient | None = None,
     search_max_results: int = 3,
+    enable_image_input: bool = False,
+    image_budget: DailyUsageBudget | None = None,
+    image_understanding: ImageUnderstandingClient | ImageUnderstanding | None = None,
+    image_input_model: str = "",
+    image_max_bytes: int = 5_242_880,
     group_state_store: GroupStateStore | None = None,
     admin_qq_ids: set[int] | None = None,
     cooldown_limiter: CooldownLimiter | None = None,
@@ -121,6 +143,7 @@ async def handle_group_message(
                     f"enabled={group_state.enabled} "
                     f"mode={group_state.mode} "
                     f"web_search={enable_web_search} "
+                    f"image_input={enable_image_input} "
                     f"group_cooldown={group_cooldown_seconds}s "
                     f"user_cooldown={user_cooldown_seconds}s"
                 ),
@@ -191,6 +214,42 @@ async def handle_group_message(
     if safety.action in {SafetyAction.DEESCALATE, SafetyAction.REFUSE} and at_bot:
         if safety.reply:
             await actions.send_group_message(event.group_id, safety.reply)
+        return True
+
+    image_trigger = detect_image_trigger(message_text)
+    if at_bot and event.image_attachments and image_trigger.should_process:
+        if not enable_image_input:
+            await actions.send_group_message(
+                event.group_id,
+                "图片理解当前未开启。你可以让管理员确认模型能力和费用后再开启。",
+            )
+            return True
+        if image_understanding is None:
+            await actions.send_group_message(event.group_id, "图片理解当前不可用。")
+            return True
+        if image_budget is not None and not image_budget.try_consume(
+            group_id=event.group_id,
+            user_id=event.user_id,
+            day=date.today(),
+        ):
+            await actions.send_group_message(event.group_id, "图片理解今日额度已用完。")
+            return True
+        try:
+            reply = await image_understanding.describe(
+                prompt=image_trigger.prompt,
+                images=event.image_attachments,
+                model=image_input_model,
+            )
+        except ImageUnderstandingDisabledError:
+            await actions.send_group_message(event.group_id, "图片理解当前不可用，视觉模型尚未接入。")
+            return True
+        except Exception:
+            logger.exception("Image understanding failed for group %s", event.group_id)
+            return False
+        if reply:
+            if len(reply) > max_reply_chars:
+                reply = reply[:max_reply_chars]
+            await actions.send_group_message(event.group_id, reply)
         return True
 
     if memory is not None:
