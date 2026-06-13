@@ -15,6 +15,8 @@
 - 管理员命令。
 - 每天 09:00 自动推送昨日群聊总结。
 
+当前 bot 进程没有应用层 WebSocket 自动重连逻辑。如果 OneBot WebSocket 断开，推荐先用 systemd 的 `Restart=always` 做进程级兜底：进程退出后 5 秒重启，相当于粗粒度重连，但不是无感的应用层重连。
+
 仍未完成或暂不进入服务器部署范围：
 
 - 图片生成。
@@ -110,6 +112,52 @@ ssh root@服务器公网IP
 apt update
 apt upgrade -y
 apt install -y git curl unzip vim ca-certificates software-properties-common
+```
+
+## Docker 安装
+
+Docker 用于部署 QQ 协议端。官方 Ubuntu 安装方式是先添加 Docker apt 仓库，再安装 Docker Engine。
+
+卸载可能存在的旧包：
+
+```bash
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do apt-get remove -y $pkg; done
+```
+
+添加 Docker 官方仓库：
+
+```bash
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt update
+```
+
+安装 Docker Engine 和 Compose 插件：
+
+```bash
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+验证：
+
+```bash
+docker --version
+docker compose version
+docker run --rm hello-world
+```
+
+启用开机自启：
+
+```bash
+systemctl enable docker
+systemctl start docker
 ```
 
 ### Python 3.12
@@ -229,6 +277,47 @@ access_token：与 .env 的 ONEBOT_ACCESS_TOKEN 一致
 
 如果本地已经能跑通某个协议端，服务器优先沿用同一个，减少变量。协议端部署完成前，`qq-ai-bot` 无法接收 QQ 群消息。
 
+### 推荐：NapCat Docker 部署
+
+你本地已经使用过 NapCat，服务器优先沿用 NapCat。NapCat 官方提供 Shell 方式安装，会拉起 Docker 部署流程：
+
+```bash
+curl -o napcat.sh https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh && sudo bash napcat.sh
+```
+
+安装过程中选择 Docker 部署。完成后进入 NapCat WebUI，按页面提示登录机器人 QQ，并配置 OneBot：
+
+```text
+HTTP API 监听：0.0.0.0:3000 或 127.0.0.1:3000
+WebSocket 监听：0.0.0.0:3001 或 127.0.0.1:3001
+access_token：与 qq-ai-bot 的 ONEBOT_ACCESS_TOKEN 一致
+```
+
+如果 NapCat 只能监听 `0.0.0.0`，也不要在云安全组开放 `3000/3001`，让端口只在服务器内部使用。
+
+查看 NapCat 容器：
+
+```bash
+docker ps
+```
+
+查看日志：
+
+```bash
+docker logs -f 容器名或容器ID
+```
+
+NapCat 跑通后，再启动 `qq-ai-bot`。如果 `/bot ping` 没反应，优先检查：
+
+```text
+NapCat 是否已登录机器人 QQ
+NapCat 是否加入目标群
+OneBot HTTP 端口是否是 3000
+OneBot WebSocket 端口是否是 3001
+ONEBOT_ACCESS_TOKEN 是否两边一致
+安全组是否没有暴露 3000/3001
+```
+
 ## 手动启动验证
 
 先确保协议端已登录并监听 `3000/3001`，再启动 bot：
@@ -263,6 +352,8 @@ Daily summary scheduler enabled
 ## systemd 常驻服务
 
 协议端跑通后，再把 Python bot 配成 systemd 服务。
+
+当前 bot 依赖 WebSocket 长连接，但代码里还没有应用层断线重连。如果连接断开并导致进程退出，下面的 `Restart=always` 会在 5 秒后重启进程，重新连接 OneBot。它能满足当前长期挂载的基本兜底，但日志里仍可能看到一次断线和重启；后续如需更平滑，再补应用层重连。
 
 创建服务文件：
 
