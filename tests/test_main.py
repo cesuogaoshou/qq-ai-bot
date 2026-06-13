@@ -96,6 +96,7 @@ async def test_build_image_understanding_client_returns_ark_client_when_configur
         image_input_model="doubao-vision-test",
         llm_base_url="https://test.api",
         llm_api_key="secret-key",
+        image_max_bytes=1024,
     )
 
     async with httpx.AsyncClient() as http:
@@ -112,6 +113,7 @@ async def test_build_image_understanding_client_reuses_llm_model_when_image_mode
         llm_model="doubao-seed-2.0-lite",
         llm_base_url="https://test.api",
         llm_api_key="secret-key",
+        image_max_bytes=1024,
     )
 
     async with httpx.AsyncClient() as http:

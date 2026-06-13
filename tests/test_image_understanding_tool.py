@@ -1,5 +1,6 @@
 import pytest
 import httpx
+import base64
 
 from qq_ai_bot.onebot.events import ImageAttachment
 from qq_ai_bot.tools.image_understanding import (
@@ -46,15 +47,56 @@ async def test_ark_image_understanding_client_posts_openai_compatible_payload() 
         )
 
     assert reply == "图片里有错误日志"
-    assert len(requests) == 1
-    assert requests[0].url == "https://ark.test/api/v3/chat/completions"
-    assert requests[0].headers["Authorization"] == "Bearer secret-key"
-    body = requests[0].read()
+    assert len(requests) == 2
+    assert requests[0].method == "GET"
+    assert requests[1].url == "https://ark.test/api/v3/chat/completions"
+    assert requests[1].headers["Authorization"] == "Bearer secret-key"
+    body = requests[1].read()
     assert b'"model":"doubao-vision-test"' in body
     assert b'"type":"text"' in body
     assert '"text":"提取图中文字"'.encode("utf-8") in body
     assert b'"type":"image_url"' in body
     assert b'"url":"http://example.com/a.jpg"' in body
+
+
+@pytest.mark.anyio
+async def test_ark_image_understanding_client_converts_reachable_image_url_to_data_url() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if str(request.url) == "http://127.0.0.1:3000/image.jpg":
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "image/jpeg"},
+                content=b"fake-image-bytes",
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "图片文字"}}]},
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = ArkImageUnderstandingClient(
+            http=http,
+            base_url="https://ark.test/api/v3",
+            api_key="secret-key",
+        )
+        reply = await client.describe(
+            prompt="提取图中文字",
+            images=[ImageAttachment(file="abc.image", url="http://127.0.0.1:3000/image.jpg")],
+            model="doubao-seed-2.0-lite",
+        )
+
+    encoded = base64.b64encode(b"fake-image-bytes").decode("ascii")
+    assert reply == "图片文字"
+    assert [str(request.url) for request in requests] == [
+        "http://127.0.0.1:3000/image.jpg",
+        "https://ark.test/api/v3/chat/completions",
+    ]
+    body = requests[1].read()
+    assert f"data:image/jpeg;base64,{encoded}".encode("ascii") in body
 
 
 @pytest.mark.anyio

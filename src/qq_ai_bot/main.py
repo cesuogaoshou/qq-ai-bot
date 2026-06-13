@@ -73,6 +73,7 @@ def build_image_understanding_client(
         http=http,
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
+        max_image_bytes=settings.image_max_bytes,
     )
 
 

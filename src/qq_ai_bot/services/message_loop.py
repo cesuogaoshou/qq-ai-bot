@@ -268,6 +268,11 @@ async def handle_group_message(
             if len(reply) > max_reply_chars:
                 reply = reply[:max_reply_chars]
             await actions.send_group_message(event.group_id, reply)
+        else:
+            await actions.send_group_message(
+                event.group_id,
+                "图片理解调用失败或没有返回内容，请稍后再试。",
+            )
         return True
 
     if message_text and memory is not None:

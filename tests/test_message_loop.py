@@ -495,6 +495,36 @@ async def test_explicit_image_request_uses_image_client_when_enabled() -> None:
 
 
 @pytest.mark.anyio
+async def test_image_request_replies_when_image_client_returns_empty() -> None:
+    actions = FakeActions()
+    image_client = FakeImageUnderstandingClient("")
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 提取图中文字",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+        image_understanding=image_client,
+        image_input_model="doubao-seed-2.0-lite",
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "图片理解调用失败或没有返回内容，请稍后再试。")]
+
+
+@pytest.mark.anyio
 async def test_image_request_uses_recent_user_image_cache_when_enabled() -> None:
     actions = FakeActions()
     image_client = FakeImageUnderstandingClient("缓存图片里有文字。")
