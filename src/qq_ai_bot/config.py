@@ -22,6 +22,9 @@ class Settings(BaseModel):
     bot_memory_max_messages: int = 5000
     bot_max_reply_chars: int = 300
     enable_web_search: bool = False
+    web_search_provider: str = "disabled"
+    tavily_api_key: str = ""
+    web_search_base_url: str = "https://api.tavily.com"
     daily_search_limit_per_group: int = 20
     daily_search_limit_per_user: int = 5
     search_max_results: int = 3
@@ -73,6 +76,9 @@ def load_settings() -> Settings:
         bot_memory_max_messages=int(os.getenv("BOT_MEMORY_MAX_MESSAGES", "5000")),
         bot_max_reply_chars=int(os.getenv("BOT_MAX_REPLY_CHARS", "300")),
         enable_web_search=_env_bool("ENABLE_WEB_SEARCH", False),
+        web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "disabled"),
+        tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
+        web_search_base_url=os.getenv("WEB_SEARCH_BASE_URL", "https://api.tavily.com"),
         daily_search_limit_per_group=int(os.getenv("DAILY_SEARCH_LIMIT_PER_GROUP", "20")),
         daily_search_limit_per_user=int(os.getenv("DAILY_SEARCH_LIMIT_PER_USER", "5")),
         search_max_results=int(os.getenv("SEARCH_MAX_RESULTS", "3")),

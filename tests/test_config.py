@@ -15,6 +15,9 @@ def clear_optional_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "BOT_MEMORY_MAX_MESSAGES",
         "BOT_MAX_REPLY_CHARS",
         "ENABLE_WEB_SEARCH",
+        "WEB_SEARCH_PROVIDER",
+        "TAVILY_API_KEY",
+        "WEB_SEARCH_BASE_URL",
         "DAILY_SEARCH_LIMIT_PER_GROUP",
         "DAILY_SEARCH_LIMIT_PER_USER",
         "SEARCH_MAX_RESULTS",
@@ -71,6 +74,9 @@ def test_load_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.bot_memory_max_messages == 5000
     assert settings.bot_max_reply_chars == 300
     assert settings.enable_web_search is False
+    assert settings.web_search_provider == "disabled"
+    assert settings.tavily_api_key == ""
+    assert settings.web_search_base_url == "https://api.tavily.com"
     assert settings.daily_search_limit_per_group == 20
     assert settings.daily_search_limit_per_user == 5
     assert settings.search_max_results == 3
@@ -129,6 +135,9 @@ def test_load_settings_reads_advanced_feature_overrides(
     monkeypatch.setenv("TARGET_GROUP_ID", "123456")
     monkeypatch.setenv("BOT_QQ", "3885518851")
     monkeypatch.setenv("ENABLE_WEB_SEARCH", "true")
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "tavily")
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
+    monkeypatch.setenv("WEB_SEARCH_BASE_URL", "https://search.example.test")
     monkeypatch.setenv("DAILY_SEARCH_LIMIT_PER_GROUP", "7")
     monkeypatch.setenv("DAILY_SEARCH_LIMIT_PER_USER", "2")
     monkeypatch.setenv("SEARCH_MAX_RESULTS", "1")
@@ -141,6 +150,9 @@ def test_load_settings_reads_advanced_feature_overrides(
     settings = load_settings()
 
     assert settings.enable_web_search is True
+    assert settings.web_search_provider == "tavily"
+    assert settings.tavily_api_key == "tavily-key"
+    assert settings.web_search_base_url == "https://search.example.test"
     assert settings.daily_search_limit_per_group == 7
     assert settings.daily_search_limit_per_user == 2
     assert settings.search_max_results == 1

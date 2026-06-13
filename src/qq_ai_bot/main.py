@@ -20,7 +20,7 @@ from qq_ai_bot.tools.image_understanding import (
     ArkImageUnderstandingClient,
     DisabledImageUnderstandingClient,
 )
-from qq_ai_bot.tools.web_search import DisabledWebSearchClient
+from qq_ai_bot.tools.web_search import DisabledWebSearchClient, TavilySearchClient
 
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,24 @@ def build_image_understanding_client(
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
         max_image_bytes=settings.image_max_bytes,
+    )
+
+
+def build_web_search_client(
+    *,
+    http: httpx.AsyncClient,
+    settings,
+) -> DisabledWebSearchClient | TavilySearchClient:
+    if not settings.enable_web_search:
+        return DisabledWebSearchClient()
+    if settings.web_search_provider != "tavily":
+        return DisabledWebSearchClient()
+    if not settings.tavily_api_key:
+        return DisabledWebSearchClient()
+    return TavilySearchClient(
+        http=http,
+        base_url=settings.web_search_base_url,
+        api_key=settings.tavily_api_key,
     )
 
 
@@ -153,6 +171,10 @@ async def run() -> None:
                 access_token=settings.onebot_access_token,
             )
             llm = build_llm_client(http=llm_http, settings=settings)
+            advanced_dependencies["web_search"] = build_web_search_client(
+                http=llm_http,
+                settings=settings,
+            )
             advanced_dependencies["image_understanding"] = build_image_understanding_client(
                 http=llm_http,
                 settings=settings,

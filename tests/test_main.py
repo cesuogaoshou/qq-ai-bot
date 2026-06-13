@@ -14,6 +14,7 @@ from qq_ai_bot.main import (
     build_llm_client,
     build_runtime_dependencies,
     build_startup_summary,
+    build_web_search_client,
 )
 from qq_ai_bot.policy.rate_limit import CooldownLimiter
 from qq_ai_bot.storage.sqlite_store import SQLiteStore
@@ -21,7 +22,7 @@ from qq_ai_bot.tools.image_understanding import (
     ArkImageUnderstandingClient,
     DisabledImageUnderstandingClient,
 )
-from qq_ai_bot.tools.web_search import DisabledWebSearchClient
+from qq_ai_bot.tools.web_search import DisabledWebSearchClient, TavilySearchClient
 
 
 def test_build_startup_summary_hides_secrets() -> None:
@@ -143,6 +144,9 @@ def test_build_advanced_dependencies_uses_settings() -> None:
         target_group_id=100,
         bot_qq=200,
         enable_web_search=True,
+        web_search_provider="tavily",
+        tavily_api_key="tavily-key",
+        web_search_base_url="https://api.tavily.com",
         daily_search_limit_per_group=7,
         daily_search_limit_per_user=2,
         search_max_results=1,
@@ -167,6 +171,51 @@ def test_build_advanced_dependencies_uses_settings() -> None:
     assert isinstance(deps["image_understanding"], DisabledImageUnderstandingClient)
     assert deps["image_input_model"] == "doubao-seed-2.0-lite"
     assert deps["image_max_bytes"] == 1024
+
+
+@pytest.mark.anyio
+async def test_build_web_search_client_returns_disabled_when_feature_off() -> None:
+    settings = SimpleNamespace(
+        enable_web_search=False,
+        web_search_provider="tavily",
+        tavily_api_key="tavily-key",
+        web_search_base_url="https://api.tavily.com",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_web_search_client(http=http, settings=settings)
+
+    assert isinstance(client, DisabledWebSearchClient)
+
+
+@pytest.mark.anyio
+async def test_build_web_search_client_returns_tavily_when_configured() -> None:
+    settings = SimpleNamespace(
+        enable_web_search=True,
+        web_search_provider="tavily",
+        tavily_api_key="tavily-key",
+        web_search_base_url="https://api.tavily.com",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_web_search_client(http=http, settings=settings)
+
+    assert isinstance(client, TavilySearchClient)
+
+
+@pytest.mark.anyio
+async def test_build_web_search_client_returns_disabled_without_tavily_key() -> None:
+    settings = SimpleNamespace(
+        enable_web_search=True,
+        web_search_provider="tavily",
+        tavily_api_key="",
+        web_search_base_url="https://api.tavily.com",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_web_search_client(http=http, settings=settings)
+
+    assert isinstance(client, DisabledWebSearchClient)
 
 
 def test_build_runtime_dependencies_uses_settings() -> None:
