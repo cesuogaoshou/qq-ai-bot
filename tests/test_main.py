@@ -148,6 +148,7 @@ def test_build_advanced_dependencies_uses_settings() -> None:
         search_max_results=1,
         enable_image_input=True,
         daily_image_limit_per_group=3,
+        daily_image_limit_per_user=2,
         image_input_model="",
         llm_model="doubao-seed-2.0-lite",
         image_max_bytes=1024,
@@ -161,6 +162,8 @@ def test_build_advanced_dependencies_uses_settings() -> None:
     assert deps["search_max_results"] == 1
     assert deps["enable_image_input"] is True
     assert isinstance(deps["image_budget"], DailyUsageBudget)
+    assert deps["image_budget"].group_daily_limit == 3
+    assert deps["image_budget"].user_daily_limit == 2
     assert isinstance(deps["image_understanding"], DisabledImageUnderstandingClient)
     assert deps["image_input_model"] == "doubao-seed-2.0-lite"
     assert deps["image_max_bytes"] == 1024

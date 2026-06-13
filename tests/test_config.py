@@ -20,6 +20,7 @@ def clear_optional_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "SEARCH_MAX_RESULTS",
         "ENABLE_IMAGE_INPUT",
         "DAILY_IMAGE_LIMIT_PER_GROUP",
+        "DAILY_IMAGE_LIMIT_PER_USER",
         "IMAGE_INPUT_MODEL",
         "IMAGE_MAX_BYTES",
         "BOT_ADMIN_QQ_IDS",
@@ -75,6 +76,7 @@ def test_load_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.search_max_results == 3
     assert settings.enable_image_input is False
     assert settings.daily_image_limit_per_group == 5
+    assert settings.daily_image_limit_per_user == 5
     assert settings.image_input_model == ""
     assert settings.image_max_bytes == 5242880
     assert settings.bot_admin_qq_ids == set()
@@ -132,6 +134,7 @@ def test_load_settings_reads_advanced_feature_overrides(
     monkeypatch.setenv("SEARCH_MAX_RESULTS", "1")
     monkeypatch.setenv("ENABLE_IMAGE_INPUT", "true")
     monkeypatch.setenv("DAILY_IMAGE_LIMIT_PER_GROUP", "3")
+    monkeypatch.setenv("DAILY_IMAGE_LIMIT_PER_USER", "2")
     monkeypatch.setenv("IMAGE_INPUT_MODEL", "doubao-vision-test")
     monkeypatch.setenv("IMAGE_MAX_BYTES", "1024")
 
@@ -143,6 +146,7 @@ def test_load_settings_reads_advanced_feature_overrides(
     assert settings.search_max_results == 1
     assert settings.enable_image_input is True
     assert settings.daily_image_limit_per_group == 3
+    assert settings.daily_image_limit_per_user == 2
     assert settings.image_input_model == "doubao-vision-test"
     assert settings.image_max_bytes == 1024
 

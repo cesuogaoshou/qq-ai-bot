@@ -100,13 +100,37 @@ class ArkImageUnderstandingClient:
         try:
             response = await self._http.get(url, timeout=self._timeout)
             response.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Image download failed: status=%s url=%s body=%s",
+                exc.response.status_code,
+                url,
+                exc.response.text[:300],
+            )
+            return url
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Image download failed: error=%s url=%s",
+                exc.__class__.__name__,
+                url,
+            )
             return url
         content_type = response.headers.get("Content-Type", "image/jpeg").split(";", 1)[0]
         if not content_type.startswith("image/"):
+            logger.warning(
+                "Image download returned non-image content: content_type=%s url=%s",
+                content_type,
+                url,
+            )
             return url
         image_bytes = response.content
         if len(image_bytes) > self._max_image_bytes:
+            logger.warning(
+                "Image download exceeded max size: bytes=%d max_bytes=%d url=%s",
+                len(image_bytes),
+                self._max_image_bytes,
+                url,
+            )
             return url
         encoded = base64.b64encode(image_bytes).decode("ascii")
         return f"data:{content_type};base64,{encoded}"

@@ -97,7 +97,7 @@ def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
         "enable_image_input": settings.enable_image_input,
         "image_budget": DailyUsageBudget(
             group_daily_limit=settings.daily_image_limit_per_group,
-            user_daily_limit=settings.daily_image_limit_per_group,
+            user_daily_limit=settings.daily_image_limit_per_user,
         ),
         "image_understanding": DisabledImageUnderstandingClient(),
         "image_input_model": settings.image_input_model or settings.llm_model,

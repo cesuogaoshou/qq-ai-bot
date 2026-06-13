@@ -1,4 +1,5 @@
 import pytest
+import logging
 
 from qq_ai_bot.budget.usage import DailyUsageBudget
 from qq_ai_bot.memory.context import GroupMemory
@@ -57,6 +58,17 @@ class FakeImageUnderstandingClient:
     ) -> str:
         self.calls.append({"prompt": prompt, "images": images, "model": model})
         return self.reply
+
+
+class FailingImageUnderstandingClient:
+    async def describe(
+        self,
+        *,
+        prompt: str,
+        images: list[ImageAttachment],
+        model: str,
+    ) -> str:
+        raise RuntimeError("image provider failed")
 
 
 class FakeGroupStateStore:
@@ -594,6 +606,68 @@ async def test_image_request_replies_when_image_client_returns_empty() -> None:
 
 
 @pytest.mark.anyio
+async def test_image_request_replies_when_image_client_raises() -> None:
+    actions = FakeActions()
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 这张图有什么内容",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        memory=GroupMemory(max_messages=10),
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+        image_understanding=FailingImageUnderstandingClient(),
+        image_input_model="doubao-seed-2.0-lite",
+    )
+
+    assert handled is True
+    assert actions.sent == [(123456, "图片理解调用失败，请稍后再试。")]
+
+
+@pytest.mark.anyio
+async def test_image_request_logs_diagnostic_details(caplog) -> None:
+    actions = FakeActions()
+    image_client = FakeImageUnderstandingClient("图片里有文字。")
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 这张图有什么内容",
+        nickname="Alice",
+        image_attachments=[
+            ImageAttachment(file="abc.image", url="http://example.com/a.jpg")
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="qq_ai_bot.services.message_loop"):
+        handled = await handle_group_message(
+            event,
+            target_group_id=123456,
+            bot_qq=999,
+            actions=actions,
+            memory=GroupMemory(max_messages=10),
+            enable_image_input=True,
+            image_budget=DailyUsageBudget(group_daily_limit=5, user_daily_limit=5),
+            image_understanding=image_client,
+            image_input_model="doubao-seed-2.0-lite",
+        )
+
+    assert handled is True
+    assert "Image request received" in caplog.text
+    assert "image_source=same_message" in caplog.text
+    assert "image_count=1" in caplog.text
+
+
+@pytest.mark.anyio
 async def test_image_request_uses_recent_user_image_cache_when_enabled() -> None:
     actions = FakeActions()
     image_client = FakeImageUnderstandingClient("缓存图片里有文字。")
@@ -759,6 +833,11 @@ async def test_admin_status_includes_runtime_state() -> None:
         group_state_store=FakeGroupStateStore(enabled=True),
         admin_qq_ids={42},
         enable_web_search=False,
+        enable_image_input=True,
+        image_budget=DailyUsageBudget(group_daily_limit=7, user_daily_limit=3),
+        image_input_model="doubao-seed-2.0-lite",
+        image_max_bytes=1048576,
+        image_cache=RecentImageCache(),
         group_cooldown_seconds=20,
         user_cooldown_seconds=10,
     )
@@ -767,6 +846,12 @@ async def test_admin_status_includes_runtime_state() -> None:
     assert "enabled=True" in actions.sent[0][1]
     assert "mode=mention_only" in actions.sent[0][1]
     assert "web_search=False" in actions.sent[0][1]
+    assert "image_input=True" in actions.sent[0][1]
+    assert "image_model=doubao-seed-2.0-lite" in actions.sent[0][1]
+    assert "image_limit_group=7/day" in actions.sent[0][1]
+    assert "image_limit_user=3/day" in actions.sent[0][1]
+    assert "image_max_bytes=1048576" in actions.sent[0][1]
+    assert "image_cache=True" in actions.sent[0][1]
     assert "group_cooldown=20s" in actions.sent[0][1]
     assert "user_cooldown=10s" in actions.sent[0][1]
 

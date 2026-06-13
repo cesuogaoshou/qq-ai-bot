@@ -146,6 +146,12 @@ async def handle_group_message(
             return True
         if admin_command.type == AdminCommandType.STATUS:
             group_state = await group_state_store.get_group(event.group_id)
+            image_group_limit = (
+                f"{image_budget.group_daily_limit}/day" if image_budget is not None else "none"
+            )
+            image_user_limit = (
+                f"{image_budget.user_daily_limit}/day" if image_budget is not None else "none"
+            )
             await actions.send_group_message(
                 event.group_id,
                 (
@@ -153,6 +159,11 @@ async def handle_group_message(
                     f"mode={group_state.mode} "
                     f"web_search={enable_web_search} "
                     f"image_input={enable_image_input} "
+                    f"image_model={image_input_model or 'default'} "
+                    f"image_limit_group={image_group_limit} "
+                    f"image_limit_user={image_user_limit} "
+                    f"image_max_bytes={image_max_bytes} "
+                    f"image_cache={image_cache is not None} "
                     f"group_cooldown={group_cooldown_seconds}s "
                     f"user_cooldown={user_cooldown_seconds}s"
                 ),
@@ -232,8 +243,23 @@ async def handle_group_message(
     )
     if should_handle_image_request:
         images = event.image_attachments
+        image_source = "same_message" if images else "none"
         if not images and image_cache is not None:
             images = image_cache.get_latest(group_id=event.group_id, user_id=event.user_id)
+            image_source = "cache" if images else "none"
+        logger.info(
+            "Image request received: group=%s user=%s trigger=%s at_bot=%s "
+            "image_source=%s image_count=%d enabled=%s model=%s max_bytes=%d",
+            event.group_id,
+            event.user_id,
+            image_trigger.should_process,
+            at_bot,
+            image_source,
+            len(images),
+            enable_image_input,
+            image_input_model or "default",
+            image_max_bytes,
+        )
         if not enable_image_input:
             await actions.send_group_message(
                 event.group_id,
@@ -268,7 +294,8 @@ async def handle_group_message(
             return True
         except Exception:
             logger.exception("Image understanding failed for group %s", event.group_id)
-            return False
+            await actions.send_group_message(event.group_id, "图片理解调用失败，请稍后再试。")
+            return True
         if reply:
             if len(reply) > max_reply_chars:
                 reply = reply[:max_reply_chars]

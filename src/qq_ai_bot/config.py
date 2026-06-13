@@ -27,6 +27,7 @@ class Settings(BaseModel):
     search_max_results: int = 3
     enable_image_input: bool = False
     daily_image_limit_per_group: int = 5
+    daily_image_limit_per_user: int = 5
     image_input_model: str = ""
     image_max_bytes: int = 5_242_880
     bot_admin_qq_ids: set[int] = set()
@@ -77,6 +78,7 @@ def load_settings() -> Settings:
         search_max_results=int(os.getenv("SEARCH_MAX_RESULTS", "3")),
         enable_image_input=_env_bool("ENABLE_IMAGE_INPUT", False),
         daily_image_limit_per_group=int(os.getenv("DAILY_IMAGE_LIMIT_PER_GROUP", "5")),
+        daily_image_limit_per_user=int(os.getenv("DAILY_IMAGE_LIMIT_PER_USER", "5")),
         image_input_model=os.getenv("IMAGE_INPUT_MODEL", ""),
         image_max_bytes=int(os.getenv("IMAGE_MAX_BYTES", "5242880")),
         bot_admin_qq_ids=_env_int_set("BOT_ADMIN_QQ_IDS"),
