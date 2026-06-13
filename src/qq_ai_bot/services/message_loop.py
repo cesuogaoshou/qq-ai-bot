@@ -217,11 +217,17 @@ async def handle_group_message(
         return True
 
     image_trigger = detect_image_trigger(message_text)
-    if at_bot and event.image_attachments and image_trigger.should_process:
+    if at_bot and image_trigger.should_process:
         if not enable_image_input:
             await actions.send_group_message(
                 event.group_id,
                 "图片理解当前未开启。你可以让管理员确认模型能力和费用后再开启。",
+            )
+            return True
+        if not event.image_attachments:
+            await actions.send_group_message(
+                event.group_id,
+                "图片理解需要和请求放在同一条消息里，请 @ 我并同时发送图片。",
             )
             return True
         if image_understanding is None:

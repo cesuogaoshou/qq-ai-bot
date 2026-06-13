@@ -405,6 +405,62 @@ async def test_explicit_image_request_replies_disabled_without_llm_or_memory() -
 
 
 @pytest.mark.anyio
+async def test_image_capability_question_replies_disabled_without_llm() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("不应该说自己能看图")
+    memory = GroupMemory(max_messages=10)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 你能看图吗",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+        enable_image_input=False,
+    )
+
+    assert handled is True
+    assert "图片理解当前未开启" in actions.sent[0][1]
+    assert llm.calls == []
+    assert memory.get_recent() == []
+
+
+@pytest.mark.anyio
+async def test_image_ocr_request_without_same_message_image_replies_disabled_without_llm() -> None:
+    actions = FakeActions()
+    llm = FakeLLM("不应该让用户重发图片")
+    memory = GroupMemory(max_messages=10)
+    event = GroupMessageEvent(
+        group_id=123456,
+        user_id=42,
+        message="[CQ:at,qq=999] 提取图中文字",
+        nickname="Alice",
+    )
+
+    handled = await handle_group_message(
+        event,
+        target_group_id=123456,
+        bot_qq=999,
+        actions=actions,
+        llm=llm,
+        memory=memory,
+        enable_image_input=False,
+    )
+
+    assert handled is True
+    assert "图片理解当前未开启" in actions.sent[0][1]
+    assert llm.calls == []
+    assert memory.get_recent() == []
+
+
+@pytest.mark.anyio
 async def test_explicit_image_request_uses_image_client_when_enabled() -> None:
     actions = FakeActions()
     image_client = FakeImageUnderstandingClient("图片里是一段错误日志。")
