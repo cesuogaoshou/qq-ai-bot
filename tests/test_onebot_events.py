@@ -73,6 +73,27 @@ def test_parse_group_message_extracts_image_segments_from_cq_string() -> None:
     assert event.image_attachments[0].url == "http://example.com/a.jpg"
 
 
+def test_parse_group_message_unescapes_image_url_entities() -> None:
+    payload = {
+        "post_type": "message",
+        "message_type": "group",
+        "group_id": 123456,
+        "user_id": 42,
+        "message": (
+            "[CQ:image,file=abc.image,"
+            "url=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=abc&amp;rkey=xyz]"
+        ),
+        "sender": {"nickname": "Alice"},
+    }
+
+    event = parse_group_message(payload)
+
+    assert event is not None
+    assert event.image_attachments[0].url == (
+        "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc&rkey=xyz"
+    )
+
+
 def test_parse_group_message_returns_none_for_non_group_event() -> None:
     payload = {
         "post_type": "message",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -100,5 +101,5 @@ def _parse_cq_params(params_text: str) -> dict[str, str]:
         if "=" not in part:
             continue
         key, value = part.split("=", 1)
-        params[key] = value
+        params[key] = html.unescape(value)
     return params
