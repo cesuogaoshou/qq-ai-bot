@@ -67,8 +67,6 @@ def build_image_understanding_client(
 ) -> ArkImageUnderstandingClient | DisabledImageUnderstandingClient:
     if not settings.enable_image_input:
         return DisabledImageUnderstandingClient()
-    if not settings.image_input_model:
-        return DisabledImageUnderstandingClient()
     if not settings.llm_api_key:
         return DisabledImageUnderstandingClient()
     return ArkImageUnderstandingClient(
@@ -101,7 +99,7 @@ def build_advanced_dependencies(settings: Settings) -> dict[str, object]:
             user_daily_limit=settings.daily_image_limit_per_group,
         ),
         "image_understanding": DisabledImageUnderstandingClient(),
-        "image_input_model": settings.image_input_model,
+        "image_input_model": settings.image_input_model or settings.llm_model,
         "image_max_bytes": settings.image_max_bytes,
     }
 

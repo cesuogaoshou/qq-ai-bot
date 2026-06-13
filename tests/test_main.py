@@ -104,6 +104,22 @@ async def test_build_image_understanding_client_returns_ark_client_when_configur
     assert isinstance(client, ArkImageUnderstandingClient)
 
 
+@pytest.mark.anyio
+async def test_build_image_understanding_client_reuses_llm_model_when_image_model_empty() -> None:
+    settings = SimpleNamespace(
+        enable_image_input=True,
+        image_input_model="",
+        llm_model="doubao-seed-2.0-lite",
+        llm_base_url="https://test.api",
+        llm_api_key="secret-key",
+    )
+
+    async with httpx.AsyncClient() as http:
+        client = build_image_understanding_client(http=http, settings=settings)
+
+    assert isinstance(client, ArkImageUnderstandingClient)
+
+
 def test_build_handler_options_uses_reply_limit() -> None:
     settings = SimpleNamespace(
         bot_max_reply_chars=120,
@@ -130,7 +146,8 @@ def test_build_advanced_dependencies_uses_settings() -> None:
         search_max_results=1,
         enable_image_input=True,
         daily_image_limit_per_group=3,
-        image_input_model="doubao-vision-test",
+        image_input_model="",
+        llm_model="doubao-seed-2.0-lite",
         image_max_bytes=1024,
     )
 
@@ -143,7 +160,7 @@ def test_build_advanced_dependencies_uses_settings() -> None:
     assert deps["enable_image_input"] is True
     assert isinstance(deps["image_budget"], DailyUsageBudget)
     assert isinstance(deps["image_understanding"], DisabledImageUnderstandingClient)
-    assert deps["image_input_model"] == "doubao-vision-test"
+    assert deps["image_input_model"] == "doubao-seed-2.0-lite"
     assert deps["image_max_bytes"] == 1024
 
 
