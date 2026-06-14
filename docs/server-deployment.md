@@ -2,6 +2,30 @@
 
 本文档用于把 QQ AI Bot 从本机迁移到云服务器长期运行。当前目标是单 QQ 群灰度，服务器承担 24 小时在线、接收群消息、写入 SQLite、每天 09:00 自动推送昨日群聊总结。
 
+## 当前部署结果
+
+当前服务器已经采用以下方式跑通：
+
+```text
+ECS：Ubuntu 22.04
+Python：3.12.13
+Docker：已安装，可用作后续容器化备用
+项目目录：/opt/qq-ai-bot/qq-ai-bot
+NapCat：Shell 版安装于 /root/Napcat
+qq-ai-bot：systemd 服务 qq-ai-bot.service
+NapCat：systemd 服务 napcat.service 常驻
+OneBot HTTP：127.0.0.1:3000
+OneBot WebSocket：127.0.0.1:3001
+NapCat WebUI：6099，通过 SSH 隧道访问
+```
+
+已验证：
+
+```text
+/bot ping -> pong
+qq-ai-bot.service -> active (running), enabled
+```
+
 ## 当前项目状态
 
 根据当前代码和本地 `.env`，项目已经具备：
@@ -42,10 +66,10 @@
 
 ## 运行架构
 
-服务器上至少常驻两个进程：
+服务器上至少常驻两个服务：
 
 ```text
-QQ 协议端（NapCatQQ 或 Lagrange.OneBot）
+NapCatQQ
   -> 本机 127.0.0.1:3001 WebSocket 上报消息
   -> 本机 127.0.0.1:3000 HTTP 接收发送动作
 
@@ -114,9 +138,11 @@ apt upgrade -y
 apt install -y git curl unzip vim ca-certificates software-properties-common
 ```
 
-## Docker 安装
+## Docker 安装（备用）
 
-Docker 用于部署 QQ 协议端。官方 Ubuntu 安装方式是先添加 Docker apt 仓库，再安装 Docker Engine。
+Docker 可用于后续把 NapCat 迁移到容器运行。当前实际部署使用的是 NapCat Shell 版，不依赖 Docker 运行。
+
+官方 Ubuntu 安装方式是先添加 Docker apt 仓库，再安装 Docker Engine。如果 `download.docker.com` 的 GPG key 下载失败，可直接使用 Ubuntu/阿里云源里的 `docker.io`。
 
 卸载可能存在的旧包：
 
@@ -160,6 +186,19 @@ systemctl enable docker
 systemctl start docker
 ```
 
+备用安装方式：
+
+```bash
+rm -f /etc/apt/sources.list.d/docker.list
+rm -f /etc/apt/keyrings/docker.asc
+apt update
+apt install -y docker.io docker-compose-v2
+systemctl enable docker
+systemctl start docker
+docker --version
+docker compose version
+```
+
 ### Python 3.12
 
 Ubuntu 22.04 默认 Python 版本通常低于 3.12，需要安装 Python 3.12：
@@ -180,10 +219,10 @@ python3.12 --version
 
 ## 部署项目代码
 
-推荐部署目录：
+当前服务器部署目录：
 
 ```text
-/opt/qq-ai-bot
+/opt/qq-ai-bot/qq-ai-bot
 ```
 
 拉取代码：
@@ -191,8 +230,11 @@ python3.12 --version
 ```bash
 mkdir -p /opt/qq-ai-bot
 cd /opt/qq-ai-bot
-git clone https://github.com/cesuogaoshou/qq-ai-bot.git .
+git clone https://github.com/cesuogaoshou/qq-ai-bot.git qq-ai-bot
+cd /opt/qq-ai-bot/qq-ai-bot
 ```
+
+后续运维命令均以该目录为准。
 
 创建虚拟环境并安装：
 
@@ -213,7 +255,7 @@ python3.12 -m venv .venv
 服务器上的 `.env` 不提交 Git。创建：
 
 ```bash
-cd /opt/qq-ai-bot
+cd /opt/qq-ai-bot/qq-ai-bot
 cp .env.example .env
 vim .env
 ```
@@ -264,7 +306,7 @@ TAVILY_API_KEY=
 
 ## OneBot 协议端
 
-当前项目不自带 QQ 协议端。必须在服务器上另行部署 NapCatQQ 或 Lagrange.OneBot。
+当前项目不自带 QQ 协议端。服务器当前使用 NapCatQQ Shell 版作为 OneBot 协议端。
 
 协议端需要满足：
 
@@ -275,36 +317,102 @@ access_token：与 .env 的 ONEBOT_ACCESS_TOKEN 一致
 登录 QQ：BOT_QQ 对应的机器人账号
 ```
 
-如果本地已经能跑通某个协议端，服务器优先沿用同一个，减少变量。协议端部署完成前，`qq-ai-bot` 无法接收 QQ 群消息。
+协议端部署完成前，`qq-ai-bot` 无法接收 QQ 群消息。
 
-### 推荐：NapCat Docker 部署
+### NapCat Shell 部署
 
-你本地已经使用过 NapCat，服务器优先沿用 NapCat。NapCat 官方提供 Shell 方式安装，会拉起 Docker 部署流程：
+服务器当前使用 NapCat 安装脚本的 Shell 方式，安装位置为 `/root/Napcat`。安装脚本如下：
 
 ```bash
-curl -o napcat.sh https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh && sudo bash napcat.sh
+curl -o napcat.sh https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh
+bash napcat.sh
 ```
 
-安装过程中选择 Docker 部署。完成后进入 NapCat WebUI，按页面提示登录机器人 QQ，并配置 OneBot：
+安装时可选择：
 
 ```text
-HTTP API 监听：0.0.0.0:3000 或 127.0.0.1:3000
-WebSocket 监听：0.0.0.0:3001 或 127.0.0.1:3001
-access_token：与 qq-ai-bot 的 ONEBOT_ACCESS_TOKEN 一致
+Docker 安装：可选，后续容器化时再用。
+Shell 安装：当前服务器实际使用。
+NapCat TUI-CLI：可选；不用也可以通过 WebUI 配置。
 ```
 
-如果 NapCat 只能监听 `0.0.0.0`，也不要在云安全组开放 `3000/3001`，让端口只在服务器内部使用。
-
-查看 NapCat 容器：
+Shell 安装完成后启动 NapCat：
 
 ```bash
-docker ps
+screen -dmS napcat bash -c "xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q 机器人QQ号"
+sleep 5
+screen -ls
 ```
 
-查看日志：
+首次启动后查看 WebUI 配置：
 
 ```bash
-docker logs -f 容器名或容器ID
+cat /root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config/webui.json
+```
+
+WebUI 默认端口为 `6099`。不要在安全组开放 `6099`，通过 SSH 隧道访问：
+
+```powershell
+ssh -L 6099:127.0.0.1:6099 root@服务器公网IP
+```
+
+本机浏览器打开：
+
+```text
+http://127.0.0.1:6099
+```
+
+进入 NapCat WebUI 后按页面提示登录机器人 QQ，并配置 OneBot：
+
+```text
+HTTP Server：
+  启用：是
+  Host：127.0.0.1
+  Port：3000
+  消息格式：String
+  Token：与 qq-ai-bot 的 ONEBOT_ACCESS_TOKEN 一致
+
+WebSocket Server：
+  启用：是
+  Host：127.0.0.1
+  Port：3001
+  消息格式：String
+  强制推送事件：开启
+  上报自身消息：关闭
+  Token：与 qq-ai-bot 的 ONEBOT_ACCESS_TOKEN 一致
+```
+
+验证监听端口：
+
+```bash
+ss -lntp | grep -E '3000|3001|6099'
+```
+
+应看到：
+
+```text
+127.0.0.1:3000
+127.0.0.1:3001
+*:6099 或 127.0.0.1:6099
+```
+
+如果 NapCat 只能监听 `0.0.0.0`，也不要在云安全组开放 `3000/3001/6099`，让 OneBot 端口只在服务器内部使用，WebUI 只走 SSH 隧道。
+
+停止 screen 方式启动的 NapCat：
+
+```bash
+screen -S napcat -X quit
+```
+
+### NapCat Docker 备用方案
+
+如果后续决定迁移到 Docker，可重新运行 NapCat 安装脚本并选择 Docker 安装。当前服务器已经安装 Docker，但当前运行不依赖 Docker。
+
+查看 Docker 版本：
+
+```bash
+docker --version
+docker compose version
 ```
 
 NapCat 跑通后，再启动 `qq-ai-bot`。如果 `/bot ping` 没反应，优先检查：
@@ -323,7 +431,7 @@ ONEBOT_ACCESS_TOKEN 是否两边一致
 先确保协议端已登录并监听 `3000/3001`，再启动 bot：
 
 ```bash
-cd /opt/qq-ai-bot
+cd /opt/qq-ai-bot/qq-ai-bot
 ./.venv/bin/qq-ai-bot
 ```
 
@@ -351,9 +459,50 @@ Daily summary scheduler enabled
 
 ## systemd 常驻服务
 
-协议端跑通后，再把 Python bot 配成 systemd 服务。
+协议端跑通后，将 NapCat 和 Python bot 都配置成 systemd 服务。
 
-当前 bot 依赖 WebSocket 长连接，但代码里还没有应用层断线重连。如果连接断开并导致进程退出，下面的 `Restart=always` 会在 5 秒后重启进程，重新连接 OneBot。它能满足当前长期挂载的基本兜底，但日志里仍可能看到一次断线和重启；后续如需更平滑，再补应用层重连。
+当前 bot 依赖 WebSocket 长连接，但代码里还没有应用层断线重连。如果连接断开并导致进程退出，`Restart=always` 会在 5 秒后重启进程，重新连接 OneBot。它能满足当前长期挂载的基本兜底，但不是无感的应用层重连；后续如需更平滑，再补应用层重连。
+
+### NapCat 服务
+
+创建服务文件：
+
+```bash
+vim /etc/systemd/system/napcat.service
+```
+
+内容：
+
+```ini
+[Unit]
+Description=NapCat QQ
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/screen -dmS napcat bash -c "xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q 机器人QQ号"
+ExecStop=/usr/bin/screen -S napcat -X quit
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用并启动：
+
+```bash
+screen -S napcat -X quit
+systemctl daemon-reload
+systemctl enable napcat
+systemctl start napcat
+systemctl status napcat --no-pager
+sleep 5
+ss -lntp | grep -E '3000|3001|6099'
+```
+
+### qq-ai-bot 服务
 
 创建服务文件：
 
@@ -371,8 +520,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/qq-ai-bot
-ExecStart=/opt/qq-ai-bot/.venv/bin/qq-ai-bot
+WorkingDirectory=/opt/qq-ai-bot/qq-ai-bot
+ExecStart=/opt/qq-ai-bot/qq-ai-bot/.venv/bin/qq-ai-bot
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -387,25 +536,28 @@ WantedBy=multi-user.target
 systemctl daemon-reload
 systemctl enable qq-ai-bot
 systemctl start qq-ai-bot
-systemctl status qq-ai-bot
+systemctl status qq-ai-bot --no-pager
 ```
 
 查看日志：
 
 ```bash
+journalctl -u napcat -f
 journalctl -u qq-ai-bot -f
-```
-
-停止：
-
-```bash
-systemctl stop qq-ai-bot
 ```
 
 重启：
 
 ```bash
+systemctl restart napcat
 systemctl restart qq-ai-bot
+```
+
+确认开机自启：
+
+```bash
+systemctl is-enabled napcat
+systemctl is-enabled qq-ai-bot
 ```
 
 ## 数据备份
@@ -413,16 +565,16 @@ systemctl restart qq-ai-bot
 至少备份：
 
 ```text
-/opt/qq-ai-bot/.env
-/opt/qq-ai-bot/data/bot.sqlite3
+/opt/qq-ai-bot/qq-ai-bot/.env
+/opt/qq-ai-bot/qq-ai-bot/data/bot.sqlite3
 ```
 
 手动备份示例：
 
 ```bash
 mkdir -p /opt/qq-ai-bot/backups
-cp /opt/qq-ai-bot/.env /opt/qq-ai-bot/backups/env.$(date +%F)
-cp /opt/qq-ai-bot/data/bot.sqlite3 /opt/qq-ai-bot/backups/bot.$(date +%F).sqlite3
+cp /opt/qq-ai-bot/qq-ai-bot/.env /opt/qq-ai-bot/backups/env.$(date +%F)
+cp /opt/qq-ai-bot/qq-ai-bot/data/bot.sqlite3 /opt/qq-ai-bot/backups/bot.$(date +%F).sqlite3
 ```
 
 试用期结束前必须备份 `.env` 和 `data/bot.sqlite3`，否则释放实例后聊天记忆和密钥配置会丢失。
@@ -432,7 +584,7 @@ cp /opt/qq-ai-bot/data/bot.sqlite3 /opt/qq-ai-bot/backups/bot.$(date +%F).sqlite
 - ECS 系统为 Ubuntu，公网 IP 可 SSH 登录。
 - 安全组只开放 22，且来源限制为自己的公网 IP。
 - Python 版本 >= 3.12。
-- `/opt/qq-ai-bot` 已拉取 GitHub 仓库。
+- `/opt/qq-ai-bot/qq-ai-bot` 已拉取 GitHub 仓库。
 - `.venv` 创建成功，依赖安装成功。
 - `.env` 已填写真实 QQ、群号、管理员、模型 key、搜索 key。
 - `SQLITE_PATH=./data/bot.sqlite3`。
@@ -442,13 +594,59 @@ cp /opt/qq-ai-bot/data/bot.sqlite3 /opt/qq-ai-bot/backups/bot.$(date +%F).sqlite
 - `/bot ping` 可回复。
 - `/bot status` 显示搜索、图片、限额状态。
 - `journalctl -u qq-ai-bot -f` 能看到运行日志。
+- `systemctl is-enabled napcat` 返回 `enabled`。
+- `systemctl is-enabled qq-ai-bot` 返回 `enabled`。
 
-## 当前待决策
+## 常用运维命令
 
-服务器部署前还需要确定一个问题：
+查看服务状态：
 
-```text
-协议端选择 NapCatQQ 还是 Lagrange.OneBot？
+```bash
+systemctl status napcat --no-pager
+systemctl status qq-ai-bot --no-pager
 ```
 
-确定后应补充对应协议端的安装、登录、监听端口和 systemd/Docker 常驻配置。
+查看日志：
+
+```bash
+journalctl -u napcat -f
+journalctl -u qq-ai-bot -f
+```
+
+重启服务：
+
+```bash
+systemctl restart napcat
+systemctl restart qq-ai-bot
+```
+
+确认 OneBot 端口：
+
+```bash
+ss -lntp | grep -E '3000|3001|6099'
+```
+
+更新代码：
+
+```bash
+cd /opt/qq-ai-bot/qq-ai-bot
+git pull
+./.venv/bin/python -m pip install -e ".[dev]"
+./.venv/bin/python -m pytest
+systemctl restart qq-ai-bot
+```
+
+如果修改了 OneBot Token，需要同时修改三处：
+
+```text
+NapCat HTTP Server Token
+NapCat WebSocket Server Token
+/opt/qq-ai-bot/qq-ai-bot/.env 里的 ONEBOT_ACCESS_TOKEN
+```
+
+修改后重启：
+
+```bash
+systemctl restart napcat
+systemctl restart qq-ai-bot
+```
