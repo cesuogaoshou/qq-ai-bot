@@ -29,6 +29,15 @@ class FakeLLM:
         return self.reply
 
 
+class FailingLLM:
+    def __init__(self) -> None:
+        self.messages: list[list[dict[str, str]]] = []
+
+    async def chat(self, messages: list[dict[str, str]]) -> str:
+        self.messages.append(messages)
+        raise RuntimeError("llm failed")
+
+
 class FakeStore:
     def __init__(self, messages: list[StoredMessage] | None = None) -> None:
         self.messages = messages or []
@@ -163,3 +172,45 @@ async def test_send_daily_summary_truncates_llm_reply() -> None:
 
     assert sent is True
     assert actions.sent == [(100, "abc")]
+
+
+@pytest.mark.anyio
+async def test_send_daily_summary_reports_empty_llm_reply_without_marking_sent() -> None:
+    store = FakeStore(messages=[_message("normal chat")])
+    actions = FakeActions()
+    llm = FakeLLM(reply="")
+
+    sent = await send_daily_summary(
+        group_id=100,
+        summary_date=date(2026, 6, 13),
+        store=store,
+        actions=actions,
+        llm=llm,
+        max_messages=500,
+        max_reply_chars=300,
+    )
+
+    assert sent is False
+    assert actions.sent == [(100, "昨日群聊总结生成失败，请稍后再试。")]
+    assert store.sent_dates == set()
+
+
+@pytest.mark.anyio
+async def test_send_daily_summary_reports_llm_exception_without_marking_sent() -> None:
+    store = FakeStore(messages=[_message("normal chat")])
+    actions = FakeActions()
+    llm = FailingLLM()
+
+    sent = await send_daily_summary(
+        group_id=100,
+        summary_date=date(2026, 6, 13),
+        store=store,
+        actions=actions,
+        llm=llm,
+        max_messages=500,
+        max_reply_chars=300,
+    )
+
+    assert sent is False
+    assert actions.sent == [(100, "昨日群聊总结生成失败，请稍后再试。")]
+    assert store.sent_dates == set()

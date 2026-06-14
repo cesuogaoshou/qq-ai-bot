@@ -113,10 +113,12 @@ async def send_daily_summary(
         reply = await llm.chat(prompt)
     except Exception:
         logger.exception("Daily summary LLM call failed: group=%s date=%s", group_id, summary_date_text)
+        await actions.send_group_message(group_id, "昨日群聊总结生成失败，请稍后再试。")
         return False
 
     if not reply:
         logger.info("Daily summary LLM returned empty reply: group=%s date=%s", group_id, summary_date_text)
+        await actions.send_group_message(group_id, "昨日群聊总结生成失败，请稍后再试。")
         return False
 
     if len(reply) > max_reply_chars:
