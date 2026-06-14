@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -36,13 +40,25 @@ class LLMClient:
                 },
                 timeout=self._timeout,
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                logger.warning(
+                    "LLM chat failed: status=%s body=%s",
+                    response.status_code,
+                    response.text[:500],
+                )
+                return ""
             data = response.json()
             choices = data.get("choices", [])
             if not choices:
+                logger.warning("LLM chat returned no choices: body=%s", response.text[:500])
                 return ""
-            return choices[0].get("message", {}).get("content", "") or ""
+            content = choices[0].get("message", {}).get("content", "") or ""
+            if not content:
+                logger.warning("LLM chat returned empty content: body=%s", response.text[:500])
+            return content
         except httpx.TimeoutException:
+            logger.warning("LLM chat timed out")
             return ""
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("LLM chat failed: error=%s", exc.__class__.__name__)
             return ""

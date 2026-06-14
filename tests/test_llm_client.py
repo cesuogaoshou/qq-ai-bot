@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
 import pytest
 
@@ -71,6 +73,47 @@ async def test_chat_empty_choices_returns_empty() -> None:
         )
 
     assert reply == ""
+
+
+@pytest.mark.anyio
+async def test_chat_http_error_logs_status_and_body(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"message": "bad request detail"}})
+
+    caplog.set_level(logging.WARNING)
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = LLMClient(
+            http=http,
+            base_url="https://test.api",
+            model="test-model",
+            api_key="key",
+        )
+        reply = await client.chat(messages=[{"role": "user", "content": "hello"}])
+
+    assert reply == ""
+    assert "LLM chat failed: status=400" in caplog.text
+    assert "bad request detail" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_chat_empty_choices_logs_response_shape(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": []})
+
+    caplog.set_level(logging.WARNING)
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http:
+        client = LLMClient(
+            http=http,
+            base_url="https://test.api",
+            model="test-model",
+            api_key="key",
+        )
+        reply = await client.chat(messages=[{"role": "user", "content": "hello"}])
+
+    assert reply == ""
+    assert "LLM chat returned no choices" in caplog.text
 
 
 @pytest.mark.anyio
