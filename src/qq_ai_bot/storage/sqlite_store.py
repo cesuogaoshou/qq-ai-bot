@@ -76,6 +76,12 @@ class SQLiteStore:
             )
             """
         )
+        await db.execute(
+            """
+            create index if not exists idx_messages_group_created_at
+            on messages (group_id, created_at)
+            """
+        )
         await db.commit()
 
     async def close(self) -> None:

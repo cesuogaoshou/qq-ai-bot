@@ -142,6 +142,7 @@ def test_load_settings_reads_advanced_feature_overrides(
     monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
     monkeypatch.setenv("TARGET_GROUP_ID", "123456")
     monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("LLM_API_KEY", "ark-key")
     monkeypatch.setenv("ENABLE_WEB_SEARCH", "true")
     monkeypatch.setenv("WEB_SEARCH_PROVIDER", "tavily")
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
@@ -243,3 +244,78 @@ def test_load_settings_allows_missing_llm_api_key(monkeypatch: pytest.MonkeyPatc
     settings = load_settings()
 
     assert settings.llm_api_key == ""
+
+
+def test_load_settings_rejects_empty_llm_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("LLM_MODEL", " ")
+
+    with pytest.raises(ValueError, match="LLM_MODEL"):
+        load_settings()
+
+
+def test_load_settings_rejects_invalid_daily_summary_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("ENABLE_DAILY_SUMMARY", "true")
+    monkeypatch.setenv("DAILY_SUMMARY_TIME", "25:99")
+
+    with pytest.raises(ValueError, match="DAILY_SUMMARY_TIME"):
+        load_settings()
+
+
+def test_load_settings_rejects_web_search_without_tavily_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("ENABLE_WEB_SEARCH", "true")
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "tavily")
+    monkeypatch.setenv("TAVILY_API_KEY", "")
+
+    with pytest.raises(ValueError, match="TAVILY_API_KEY"):
+        load_settings()
+
+
+def test_load_settings_rejects_image_input_without_llm_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv("ENABLE_IMAGE_INPUT", "true")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="LLM_API_KEY"):
+        load_settings()
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    [
+        "BOT_GROUP_COOLDOWN_SECONDS",
+        "BOT_USER_COOLDOWN_SECONDS",
+    ],
+)
+def test_load_settings_rejects_negative_cooldowns(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+) -> None:
+    monkeypatch.setenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001")
+    monkeypatch.setenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("TARGET_GROUP_ID", "123456")
+    monkeypatch.setenv("BOT_QQ", "3885518851")
+    monkeypatch.setenv(env_name, "-1")
+
+    with pytest.raises(ValueError, match=env_name):
+        load_settings()

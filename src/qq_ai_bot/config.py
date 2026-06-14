@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import time
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -66,7 +67,7 @@ def load_settings() -> Settings:
     if not bot_qq:
         raise ValueError("BOT_QQ is required")
 
-    return Settings(
+    settings = Settings(
         onebot_ws_url=os.getenv("ONEBOT_WS_URL", "ws://127.0.0.1:3001"),
         onebot_http_url=os.getenv("ONEBOT_HTTP_URL", "http://127.0.0.1:3000"),
         onebot_access_token=os.getenv("ONEBOT_ACCESS_TOKEN", ""),
@@ -100,3 +101,33 @@ def load_settings() -> Settings:
         daily_summary_lookback_days=int(os.getenv("DAILY_SUMMARY_LOOKBACK_DAYS", "1")),
         daily_summary_max_messages=int(os.getenv("DAILY_SUMMARY_MAX_MESSAGES", "500")),
     )
+    _validate_settings(settings)
+    return settings
+
+
+def _validate_settings(settings: Settings) -> None:
+    if not settings.llm_model.strip():
+        raise ValueError("LLM_MODEL must not be empty")
+
+    if settings.enable_daily_summary:
+        _validate_hh_mm("DAILY_SUMMARY_TIME", settings.daily_summary_time)
+
+    if settings.enable_web_search:
+        if settings.web_search_provider == "tavily" and not settings.tavily_api_key.strip():
+            raise ValueError("TAVILY_API_KEY is required when Tavily web search is enabled")
+
+    if settings.enable_image_input and not settings.llm_api_key.strip():
+        raise ValueError("LLM_API_KEY is required when image input is enabled")
+
+    if settings.bot_group_cooldown_seconds < 0:
+        raise ValueError("BOT_GROUP_COOLDOWN_SECONDS must be greater than or equal to 0")
+    if settings.bot_user_cooldown_seconds < 0:
+        raise ValueError("BOT_USER_COOLDOWN_SECONDS must be greater than or equal to 0")
+
+
+def _validate_hh_mm(name: str, value: str) -> None:
+    try:
+        hour_text, minute_text = value.split(":", maxsplit=1)
+        time(hour=int(hour_text), minute=int(minute_text))
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must use HH:MM format") from None

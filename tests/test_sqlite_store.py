@@ -299,3 +299,20 @@ async def test_daily_summary_marker_prevents_duplicate_pushes() -> None:
         assert await store.has_daily_summary(group_id=100, summary_date="2026-06-13") is True
     finally:
         await store.close()
+
+
+@pytest.mark.anyio
+async def test_init_creates_messages_group_created_at_index() -> None:
+    store = SQLiteStore(_sqlite_test_path())
+    try:
+        await store.init()
+        db = await store._connect()
+        cursor = await db.execute("pragma index_list(messages)")
+        try:
+            rows = await cursor.fetchall()
+        finally:
+            await cursor.close()
+
+        assert any(row[1] == "idx_messages_group_created_at" for row in rows)
+    finally:
+        await store.close()
